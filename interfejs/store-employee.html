@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Employee Dashboard - Handcraft Marketplace</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+    <div class="logo-container">
+        <img src="../images/administrative/logo.jpg" alt="Handcraft Marketplace Logo" onerror="this.style.display='none'">
+        <h1>🎨 Handcraft Marketplace</h1>
+    </div>
+    <nav>
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="products.html">Products</a></li>
+            <li><a href="#" id="dashboard-link" class="active">Employee</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main>
+    <div class="dashboard-header">
+        <h2>Employee Dashboard</h2>
+        <p>Welcome, <span id="employee-name">Employee</span>!</p>
+    </div>
+
+    <div class="form-group">
+        <label for="store-select">Select Store:</label>
+        <select id="store-select" class="store-selector">
+            <option value="">Loading stores...</option>
+        </select>
+    </div>
+
+    <div id="store-dashboard" style="display: none;">
+        <div class="dashboard-stats">
+            <div class="stat-card pink">
+                <h3>Pending Orders</h3>
+                <div class="stat-number" id="pending-orders">0</div>
+            </div>
+            <div class="stat-card blue">
+                <h3>Pending Requests</h3>
+                <div class="stat-number" id="pending-requests">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Pending Refunds</h3>
+                <div class="stat-number" id="pending-refunds">0</div>
+            </div>
+            <div class="stat-card pink">
+                <h3>My Tasks</h3>
+                <div class="stat-number" id="my-tasks">0</div>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="orders">Orders</button>
+            <button class="tab-btn" data-tab="requests">Customer Requests</button>
+            <button class="tab-btn" data-tab="refunds">Refunds</button>
+            <button class="tab-btn" data-tab="products">Products</button>
+            <button class="tab-btn" data-tab="tasks">My Tasks</button>
+        </div>
+
+        <!-- Orders Tab -->
+        <div id="orders-tab" class="tab-content active">
+            <div class="dashboard-section">
+                <h3>Manage Orders</h3>
+                <div class="table-responsive">
+                    <table id="orders-table">
+                        <thead>
+                        <tr>
+                            <th>Order #</th>
+                            <th>Client</th>
+                            <th>Date</th>
+                            <th>Status</th>
+                            <th>Total</th>
+                            <th>Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody id="orders-list">
+                        <tr><td colspan="6" class="loading">Loading orders...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Requests Tab -->
+        <div id="requests-tab" class="tab-content">
+            <div class="dashboard-section">
+                <h3>Customer Requests</h3>
+                <div class="table-responsive">
+                    <table id="requests-table">
+                        <thead>
+                        <tr>
+                            <th>Request #</th>
+                            <th>Client</th>
+                            <th>Date</th>
+                            <th>Problem</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody id="requests-list">
+                        <tr><td colspan="6" class="loading">Loading requests...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Refunds Tab -->
+        <div id="refunds-tab" class="tab-content">
+            <div class="dashboard-section">
+                <h3>Refund Requests</h3>
+                <div class="table-responsive">
+                    <table id="refunds-table">
+                        <thead>
+                        <tr>
+                            <th>Refund ID</th>
+                            <th>Order #</th>
+                            <th>Amount</th>
+                            <th>Reason</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody id="refunds-list">
+                        <tr><td colspan="6" class="loading">Loading refunds...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Products Tab -->
+        <div id="products-tab" class="tab-content">
+            <div class="dashboard-section">
+                <h3>Store Products</h3>
+                <div class="table-responsive">
+                    <table id="products-table">
+                        <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Description</th>
+                            <th>Price</th>
+                            <th>Available</th>
+                            <th>Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody id="products-list">
+                        <tr><td colspan="5" class="loading">Loading products...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tasks Tab -->
+        <div id="tasks-tab" class="tab-content">
+            <div class="dashboard-section">
+                <h3>My Assigned Tasks</h3>
+                <div id="tasks-list" class="task-list">
+                    <div class="loading">Loading tasks...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<div id="respond-request-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2>Respond to Request</h2>
+        <form id="respond-request-form" class="form">
+            <input type="hidden" id="respond-request-num">
+
+            <div class="form-group">
+                <label for="request-response">Your Response</label>
+                <textarea id="request-response" rows="4" required></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="request-status">Update Status</label>
+                <select id="request-status">
+                    <option value="in_progress">In Progress</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="closed">Closed</option>
+                </select>
+            </div>
+
+            <button type="submit" class="btn-primary">Submit Response</button>
+        </form>
+    </div>
+</div>
+
+<div id="process-refund-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2>Process Refund</h2>
+        <form id="process-refund-form" class="form">
+            <input type="hidden" id="process-refund-id">
+
+            <div class="form-group">
+                <label for="refund-action">Action</label>
+                <select id="refund-action" required>
+                    <option value="approved">Approve Refund</option>
+                    <option value="rejected">Reject Refund</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="refund-notes">Notes</label>
+                <textarea id="refund-notes" rows="3"></textarea>
+            </div>
+
+            <button type="submit" class="btn-primary">Process Refund</button>
+        </form>
+    </div>
+</div>
+
+<footer>
+    <div class="footer-content">
+        <div class="footer-section">
+            <h3>Handcraft Marketplace</h3>
+            <p>Employee Portal</p>
+        </div>
+        <div class="footer-section">
+            <h3>Quick Links</h3>
+            <ul>
+                <li><a href="index.html">Home</a></li>
+                <li><a href="products.html">Products</a></li>
+            </ul>
+        </div>
+    </div>
+    <div class="footer-bottom">
+        <p>&copy; 2025 Handcraft Marketplace. All rights reserved.</p>
+    </div>
+</footer>
+
+<script src="script.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', async () => {
+        const user = await loadUserData();
+        if (!user || user.userType !== 'store_employee') {
+            window.location.href = 'index.html';
+            return;
+        }
+
+        document.getElementById('employee-name').textContent = `${user.firstName} ${user.lastName || ''}`;
+
+        // Load stores
+        const stores = user.stores || [];
+        const storeSelect = document.getElementById('store-select');
+
+        if (stores.length === 0) {
+            storeSelect.innerHTML = '<option value="">No stores assigned</option>';
+        } else {
+            storeSelect.innerHTML = stores.map(store =>
+                `<option value="${store.store_id}">${store.name} (${store.store_id})</option>`
+            ).join('');
+
+            // Load first store by default
+            loadStoreData(stores[0].store_id);
+        }
+
+        storeSelect.addEventListener('change', (e) => {
+            if (e.target.value) {
+                loadStoreData(e.target.value);
+            }
+        });
+
+        // Tab switching
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(`${btn.dataset.tab}-tab`).classList.add('active');
+            });
+        });
+    });
+
+    async function loadStoreData(storeId) {
+        document.getElementById('store-dashboard').style.display = 'block';
+
+        // Load tasks and stats
+        await loadEmployeeTasks(storeId);
+
+        // Load orders
+        await loadStoreOrders(storeId);
+
+        // Load requests
+        await loadStoreRequests(storeId);
+
+        // Load refunds
+        await loadStoreRefunds(storeId);
+
+        // Load products
+        await loadStoreProducts(storeId);
+    }
+
+    async function loadEmployeeTasks(storeId) {
+        try {
+            const response = await fetch(`/api/employee-tasks?storeId=${storeId}`);
+            const data = await response.json();
+
+            if (data.success) {
+                document.getElementById('pending-orders').textContent = data.tasks.pending_orders.length;
+                document.getElementById('pending-requests').textContent = data.tasks.pending_requests.length;
+                document.getElementById('pending-refunds').textContent = data.tasks.pending_refunds.length;
+                document.getElementById('my-tasks').textContent =
+                    data.tasks.pending_orders.length + data.tasks.pending_requests.length + data.tasks.pending_refunds.length;
+
+                // Display tasks
+                const tasksList = document.getElementById('tasks-list');
+                if (data.tasks.pending_orders.length > 0 || data.tasks.pending_requests.length > 0 || data.tasks.pending_refunds.length > 0) {
+                    let tasksHtml = '<div class="task-items">';
+
+                    if (data.tasks.pending_orders.length > 0) {
+                        tasksHtml += '<h4>Pending Orders</h4>';
+                        data.tasks.pending_orders.forEach(order => {
+                            tasksHtml += `
+                                    <div class="task-item">
+                                        <p><strong>Order #${order.order_num}</strong> - ${order.first_name} ${order.last_name}</p>
+                                        <button class="btn-small" onclick="updateOrderStatus('${order.order_num}')">Update Status</button>
+                                    </div>
+                                `;
+                        });
+                    }
+
+                    if (data.tasks.pending_requests.length > 0) {
+                        tasksHtml += '<h4>Pending Requests</h4>';
+                        data.tasks.pending_requests.forEach(request => {
+                            tasksHtml += `
+                                    <div class="task-item">
+                                        <p><strong>Request #${request.request_num}</strong> - ${request.first_name} ${request.last_name}</p>
+                                        <p>${request.problem.substring(0, 50)}${request.problem.length > 50 ? '...' : ''}</p>
+                                        <button class="btn-small" onclick="respondToRequest('${request.request_num}')">Respond</button>
+                                    </div>
+                                `;
+                        });
+                    }
+
+                    if (data.tasks.pending_refunds.length > 0) {
+                        tasksHtml += '<h4>Pending Refunds</h4>';
+                        data.tasks.pending_refunds.forEach(refund => {
+                            tasksHtml += `
+                                    <div class="task-item">
+                                        <p><strong>Refund #${refund.refund_id}</strong> - Order #${refund.order_num}</p>
+                                        <p>Amount: $${parseFloat(refund.amount).toFixed(2)}</p>
+                                        <button class="btn-small" onclick="processRefund('${refund.refund_id}')">Process</button>
+                                    </div>
+                                `;
+                        });
+                    }
+
+                    tasksHtml += '</div>';
+                    tasksList.innerHTML = tasksHtml;
+                } else {
+                    tasksList.innerHTML = '<p>No pending tasks</p>';
+                }
+            }
+        } catch (error) {
+            console.error('Error loading tasks:', error);
+        }
+    }
+
+    async function loadStoreOrders(storeId) {
+        try {
+            const response = await fetch(`/api/store-orders?storeId=${storeId}`);
+            const data = await response.json();
+
+            const tbody = document.getElementById('orders-list');
+            if (data.success && data.orders.length > 0) {
+                tbody.innerHTML = data.orders.map(order => {
+                    const total = order.items ? order.items.reduce((sum, item) =>
+                        sum + (item.price * item.quantity), 0) : 0;
+                    return `
+                            <tr>
+                                <td>${order.order_num}</td>
+                                <td>${order.first_name} ${order.last_name}</td>
+                                <td>${new Date(order.order_date).toLocaleDateString()}</td>
+                                <td><span class="status-badge status-${order.status}">${order.status}</span></td>
+                                <td>$${total.toFixed(2)}</td>
+                                <td>
+                                    <button class="btn-small" onclick="updateOrderStatus('${order.order_num}')">Update</button>
+                                    <button class="btn-small" onclick="viewOrderDetails('${order.order_num}')">View</button>
+                                </td>
+                            </tr>
+                        `;
+                }).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="6">No orders found</td></tr>';
+            }
+        } catch (error) {
+            console.error('Error loading orders:', error);
+            document.getElementById('orders-list').innerHTML = '<tr><td colspan="6">Error loading orders</td></tr>';
+        }
+    }
+
+    async function loadStoreRequests(storeId) {
+        // This would need a separate API endpoint
+        document.getElementById('requests-list').innerHTML = '<tr><td colspan="6">Requests feature coming soon</td></tr>';
+    }
+
+    async function loadStoreRefunds(storeId) {
+        // This would need a separate API endpoint
+        document.getElementById('refunds-list').innerHTML = '<tr><td colspan="6">Refunds feature coming soon</td></tr>';
+    }
+
+    async function loadStoreProducts(storeId) {
+        try {
+            const response = await fetch(`/api/store-products?storeId=${storeId}`);
+            const data = await response.json();
+
+            const tbody = document.getElementById('products-list');
+            if (data.success && data.products.length > 0) {
+                tbody.innerHTML = data.products.map(product => `
+                        <tr>
+                            <td>${product.code}</td>
+                            <td>${product.description.substring(0, 30)}${product.description.length > 30 ? '...' : ''}</td>
+                            <td>$${parseFloat(product.price).toFixed(2)}</td>
+                            <td>${product.availability}</td>
+                            <td>
+                                <button class="btn-small" onclick="viewProduct('${product.code}')">View</button>
+                            </td>
+                        </tr>
+                    `).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="5">No products found</td></tr>';
+            }
+        } catch (error) {
+            console.error('Error loading products:', error);
+            document.getElementById('products-list').innerHTML = '<tr><td colspan="5">Error loading products</td></tr>';
+        }
+    }
+
+    window.updateOrderStatus = (orderNum) => {
+        const newStatus = prompt('Enter new status (pending, processing, shipping, delivered, canceled):');
+        if (newStatus) {
+            alert(`Order ${orderNum} status updated to ${newStatus} - Feature coming soon`);
+        }
+    };
+
+    window.respondToRequest = (requestNum) => {
+        document.getElementById('respond-request-num').value = requestNum;
+        document.getElementById('respond-request-modal').style.display = 'block';
+    };
+
+    window.processRefund = (refundId) => {
+        document.getElementById('process-refund-id').value = refundId;
+        document.getElementById('process-refund-modal').style.display = 'block';
+    };
+
+    window.viewOrderDetails = (orderNum) => {
+        alert(`View order ${orderNum} details - Feature coming soon`);
+    };
+
+    window.viewProduct = (productCode) => {
+        window.location.href = `product-detail.html?code=${productCode}`;
+    };
+
+    // Form submissions
+    document.getElementById('respond-request-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        alert('Response submitted - Feature coming soon');
+        document.getElementById('respond-request-modal').style.display = 'none';
+    });
+
+    document.getElementById('process-refund-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        alert('Refund processed - Feature coming soon');
+        document.getElementById('process-refund-modal').style.display = 'none';
+    });
+
+    // Close modal functionality
+    document.querySelectorAll('.modal .close').forEach(closeBtn => {
+        closeBtn.addEventListener('click', () => {
+            closeBtn.closest('.modal').style.display = 'none';
+        });
+    });
+
+    window.addEventListener('click', (event) => {
+        if (event.target.classList.contains('modal')) {
+            event.target.style.display = 'none';
+        }
+    });
+</script>
+</body>
+</html>

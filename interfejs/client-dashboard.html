@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Dashboard - Handcraft Marketplace</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="logo-container">
+    <img src="../images/administrative/logo.jpg" alt="Handcraft Marketplace Logo" onerror="this.style.display='none'">
+    <h1>🎨 Handcraft Marketplace</h1>
+  </div>
+  <nav>
+    <ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="products.html">Products</a></li>
+      <li><a href="#" id="dashboard-link" class="active">My Dashboard</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main>
+  <div class="dashboard-header">
+    <h2>My Dashboard</h2>
+    <p>Welcome back, <span id="client-name">Client</span>!</p>
+  </div>
+
+  <div class="dashboard-stats">
+    <div class="stat-card pink">
+      <h3>Total Orders</h3>
+      <div class="stat-number" id="total-orders">0</div>
+    </div>
+    <div class="stat-card blue">
+      <h3>Total Spent</h3>
+      <div class="stat-number" id="total-spent">$0</div>
+    </div>
+    <div class="stat-card">
+      <h3>Pending Orders</h3>
+      <div class="stat-number" id="pending-orders">0</div>
+    </div>
+    <div class="stat-card pink">
+      <h3>Delivered</h3>
+      <div class="stat-number" id="delivered-orders">0</div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="orders">My Orders</button>
+    <button class="tab-btn" data-tab="addresses">Delivery Addresses</button>
+    <button class="tab-btn" data-tab="requests">My Requests</button>
+    <button class="tab-btn" data-tab="reviews">My Reviews</button>
+    <button class="tab-btn" data-tab="profile">Profile Settings</button>
+  </div>
+
+  <!-- Orders Tab -->
+  <div id="orders-tab" class="tab-content active">
+    <div class="dashboard-section">
+      <h3>My Orders</h3>
+      <div class="table-responsive">
+        <table id="orders-table">
+          <thead>
+          <tr>
+            <th>Order #</th>
+            <th>Store</th>
+            <th>Date</th>
+            <th>Status</th>
+            <th>Total</th>
+            <th>Actions</th>
+          </tr>
+          </thead>
+          <tbody id="orders-list">
+          <tr><td colspan="6" class="loading">Loading orders...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Addresses Tab -->
+  <div id="addresses-tab" class="tab-content">
+    <div class="dashboard-section">
+      <h3>Delivery Addresses</h3>
+      <button id="add-address-btn" class="btn-primary" style="margin-bottom: 1rem;">Add New Address</button>
+
+      <div id="addresses-list">
+        <div class="loading">Loading addresses...</div>
+      </div>
+
+      <div id="add-address-form" style="display: none;">
+        <h4>Add New Address</h4>
+        <form class="form">
+          <div class="form-group">
+            <label for="new-address">Street Address *</label>
+            <input type="text" id="new-address" required>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="new-city">City *</label>
+              <input type="text" id="new-city" required>
+            </div>
+            <div class="form-group">
+              <label for="new-postcode">Postcode *</label>
+              <input type="text" id="new-postcode" required>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="new-country">Country *</label>
+            <input type="text" id="new-country" required>
+          </div>
+
+          <div class="form-group checkbox">
+            <input type="checkbox" id="new-is-default">
+            <label for="new-is-default">Set as default address</label>
+          </div>
+
+          <button type="submit" class="btn-primary">Save Address</button>
+          <button type="button" class="btn-secondary" id="cancel-add-address">Cancel</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Requests Tab -->
+  <div id="requests-tab" class="tab-content">
+    <div class="dashboard-section">
+      <h3>My Requests</h3>
+      <button id="new-request-btn" class="btn-primary" style="margin-bottom: 1rem;">New Request</button>
+
+      <div class="table-responsive">
+        <table id="requests-table">
+          <thead>
+          <tr>
+            <th>Request #</th>
+            <th>Store</th>
+            <th>Date</th>
+            <th>Problem</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+          </thead>
+          <tbody id="requests-list">
+          <tr><td colspan="6" class="loading">Loading requests...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div id="new-request-form" style="display: none; margin-top: 2rem;">
+        <h4>New Request</h4>
+        <form class="form">
+          <div class="form-group">
+            <label for="request-store">Store *</label>
+            <select id="request-store" required>
+              <option value="">Select Store</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="request-problem">Problem Description *</label>
+            <textarea id="request-problem" rows="4" required></textarea>
+          </div>
+
+          <button type="submit" class="btn-primary">Submit Request</button>
+          <button type="button" class="btn-secondary" id="cancel-new-request">Cancel</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reviews Tab -->
+  <div id="reviews-tab" class="tab-content">
+    <div class="dashboard-section">
+      <h3>My Reviews</h3>
+      <div class="table-responsive">
+        <table id="reviews-table">
+          <thead>
+          <tr>
+            <th>Product</th>
+            <th>Rating</th>
+            <th>Comment</th>
+            <th>Date</th>
+            <th>Actions</th>
+          </tr>
+          </thead>
+          <tbody id="reviews-list">
+          <tr><td colspan="5" class="loading">Loading reviews...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Profile Tab -->
+  <div id="profile-tab" class="tab-content">
+    <div class="dashboard-section">
+      <h3>Profile Settings</h3>
+      <form id="profile-form" class="form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="profile-first-name">First Name</label>
+            <input type="text" id="profile-first-name">
+          </div>
+          <div class="form-group">
+            <label for="profile-last-name">Last Name</label>
+            <input type="text" id="profile-last-name">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="profile-email">Email</label>
+          <input type="email" id="profile-email" readonly>
+          <small>Email cannot be changed</small>
+        </div>
+
+        <h4>Change Password</h4>
+        <div class="form-group">
+          <label for="current-password">Current Password</label>
+          <input type="password" id="current-password">
+        </div>
+
+        <div class="form-group">
+          <label for="new-password">New Password</label>
+          <input type="password" id="new-password">
+          <small class="password-hint">Leave blank to keep current password</small>
+        </div>
+
+        <div class="form-group">
+          <label for="confirm-new-password">Confirm New Password</label>
+          <input type="password" id="confirm-new-password">
+        </div>
+
+        <button type="submit" class="btn-primary">Update Profile</button>
+      </form>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="footer-content">
+    <div class="footer-section">
+      <h3>Handcraft Marketplace</h3>
+      <p>Your personal shopping dashboard</p>
+    </div>
+    <div class="footer-section">
+      <h3>Quick Links</h3>
+      <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="products.html">Products</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>&copy; 2025 Handcraft Marketplace. All rights reserved.</p>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', async () => {
+    const user = await loadUserData();
+    if (!user || user.userType !== 'client') {
+      window.location.href = 'index.html';
+      return;
+    }
+
+    document.getElementById('client-name').textContent = `${user.firstName} ${user.lastName || ''}`;
+
+    // Load profile data
+    document.getElementById('profile-first-name').value = user.firstName || '';
+    document.getElementById('profile-last-name').value = user.lastName || '';
+    document.getElementById('profile-email').value = user.email || '';
+
+    // Load client stats
+    await loadClientStats(user.id);
+
+    // Load orders
+    await loadClientOrders(user.id);
+
+    // Load addresses
+    await loadClientAddresses(user.id);
+
+    // Load requests
+    await loadClientRequests(user.id);
+
+    // Load reviews
+    await loadClientReviews(user.id);
+
+    // Load stores for request form
+    await loadStores();
+
+    // Tab switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(`${btn.dataset.tab}-tab`).classList.add('active');
+      });
+    });
+
+    // Address form toggle
+    document.getElementById('add-address-btn').addEventListener('click', () => {
+      document.getElementById('add-address-form').style.display = 'block';
+      document.getElementById('add-address-btn').style.display = 'none';
+    });
+
+    document.getElementById('cancel-add-address').addEventListener('click', () => {
+      document.getElementById('add-address-form').style.display = 'none';
+      document.getElementById('add-address-btn').style.display = 'inline-block';
+    });
+
+    // Request form toggle
+    document.getElementById('new-request-btn').addEventListener('click', () => {
+      document.getElementById('new-request-form').style.display = 'block';
+      document.getElementById('new-request-btn').style.display = 'none';
+    });
+
+    document.getElementById('cancel-new-request').addEventListener('click', () => {
+      document.getElementById('new-request-form').style.display = 'none';
+      document.getElementById('new-request-btn').style.display = 'inline-block';
+    });
+
+    // Form submissions
+    document.getElementById('add-address-form').addEventListener('submit', addAddress);
+    document.getElementById('new-request-form').addEventListener('submit', submitRequest);
+    document.getElementById('profile-form').addEventListener('submit', updateProfile);
+  });
+
+  async function loadClientStats(clientId) {
+    try {
+      const response = await fetch(`/api/client-stats`);
+      const data = await response.json();
+
+      if (data.success) {
+        document.getElementById('total-orders').textContent = data.stats.total_orders || 0;
+        document.getElementById('total-spent').textContent = `$${parseFloat(data.stats.total_spent || 0).toFixed(2)}`;
+        document.getElementById('pending-orders').textContent = data.stats.pending_orders || 0;
+        document.getElementById('delivered-orders').textContent = data.stats.delivered_orders || 0;
+      }
+    } catch (error) {
+      console.error('Error loading stats:', error);
+    }
+  }
+
+  async function loadClientOrders(clientId) {
+    try {
+      const response = await fetch('/api/user-orders');
+      const data = await response.json();
+
+      const tbody = document.getElementById('orders-list');
+      if (data.success && data.orders.length > 0) {
+        tbody.innerHTML = data.orders.map(order => {
+          const total = order.items ? order.items.reduce((sum, item) =>
+                  sum + (item.price * item.quantity), 0) : 0;
+          return `
+                            <tr>
+                                <td>${order.order_num}</td>
+                                <td>${order.store_name || 'Unknown'}</td>
+                                <td>${new Date(order.order_date).toLocaleDateString()}</td>
+                                <td><span class="status-badge status-${order.status}">${order.status}</span></td>
+                                <td>$${total.toFixed(2)}</td>
+                                <td>
+                                    <button class="btn-small" onclick="viewOrder('${order.order_num}')">View</button>
+                                    ${order.status === 'delivered' ?
+                  `<button class="btn-small" onclick="reviewOrder('${order.order_num}')">Review</button>` : ''}
+                                </td>
+                            </tr>
+                        `;
+        }).join('');
+      } else {
+        tbody.innerHTML = '<tr><td colspan="6">No orders found</td></tr>';
+      }
+    } catch (error) {
+      console.error('Error loading orders:', error);
+      document.getElementById('orders-list').innerHTML = '<tr><td colspan="6">Error loading orders</td></tr>';
+    }
+  }
+
+  async function loadClientAddresses(clientId) {
+    // This would need a separate API endpoint
+    document.getElementById('addresses-list').innerHTML = `
+                <div class="address-card">
+                    <p><strong>Default Address:</strong></p>
+                    <p>st. Center num.10, Skopje 1000, North Macedonia</p>
+                    <button class="btn-small">Edit</button>
+                    <button class="btn-small" style="background: var(--danger);">Delete</button>
+                </div>
+            `;
+  }
+
+  async function loadClientRequests(clientId) {
+    // This would need a separate API endpoint
+    document.getElementById('requests-list').innerHTML = '<tr><td colspan="6">No requests found</td></tr>';
+  }
+
+  async function loadClientReviews(clientId) {
+    // This would need a separate API endpoint
+    document.getElementById('reviews-list').innerHTML = '<tr><td colspan="5">No reviews yet</td></tr>';
+  }
+
+  async function loadStores() {
+    try {
+      const response = await fetch('/api/stores');
+      const data = await response.json();
+
+      if (data.success) {
+        const select = document.getElementById('request-store');
+        select.innerHTML = '<option value="">Select Store</option>' +
+                data.stores.map(store =>
+                        `<option value="${store.store_id}">${store.name}</option>`
+                ).join('');
+      }
+    } catch (error) {
+      console.error('Error loading stores:', error);
+    }
+  }
+
+  function addAddress(e) {
+    e.preventDefault();
+    alert('Address added - Feature coming soon');
+    document.getElementById('add-address-form').style.display = 'none';
+    document.getElementById('add-address-btn').style.display = 'inline-block';
+  }
+
+  function submitRequest(e) {
+    e.preventDefault();
+    alert('Request submitted - Feature coming soon');
+    document.getElementById('new-request-form').style.display = 'none';
+    document.getElementById('new-request-btn').style.display = 'inline-block';
+  }
+
+  function updateProfile(e) {
+    e.preventDefault();
+
+    const newPassword = document.getElementById('new-password').value;
+    const confirmPassword = document.getElementById('confirm-new-password').value;
+
+    if (newPassword && newPassword !== confirmPassword) {
+      alert('New passwords do not match');
+      return;
+    }
+
+    alert('Profile updated - Feature coming soon');
+  }
+
+  window.viewOrder = (orderNum) => {
+    alert(`View order ${orderNum} details - Feature coming soon`);
+  };
+
+  window.reviewOrder = (orderNum) => {
+    window.location.href = `reviews.html?order=${orderNum}`;
+  };
+</script>
+</body>
+</html>

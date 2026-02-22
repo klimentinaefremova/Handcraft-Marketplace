@@ -1,0 +1,20 @@
+{
+  "name": "handcraft-marketplace",
+  "version": "1.0.0",
+  "description": "Handcraft Marketplace - A platform for handmade products",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "view-db": "node view-database.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.3.1",
+    "nodemailer": "^6.9.7",
+    "sqlite3": "^5.1.6"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

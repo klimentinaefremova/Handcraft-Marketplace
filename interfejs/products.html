@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Browse Products - Handcraft Marketplace</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="logo-container">
+    <img src="../images/administrative/logo.jpg" alt="Handcraft Marketplace Logo" onerror="this.style.display='none'">
+    <h1>🎨 Handcraft Marketplace</h1>
+  </div>
+  <nav>
+    <ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="products.html" class="active">Products</a></li>
+      <li><a href="login.html">Login</a></li>
+      <li><a href="register.html">Register</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main>
+  <div class="products-header">
+    <h2>Browse Products</h2>
+    <p>Discover unique handmade items from our artisans</p>
+  </div>
+
+  <div class="filters-section">
+    <div class="filters">
+      <div class="filter-group">
+        <label for="category-filter">Category:</label>
+        <select id="category-filter">
+          <option value="all">All Categories</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label for="search-input">Search:</label>
+        <input type="text" id="search-input" placeholder="Search products...">
+      </div>
+
+      <div class="filter-group">
+        <label for="sort-filter">Sort by:</label>
+        <select id="sort-filter">
+          <option value="newest">Newest</option>
+          <option value="price-low">Price: Low to High</option>
+          <option value="price-high">Price: High to Low</option>
+          <option value="name">Name</option>
+        </select>
+      </div>
+
+      <button id="apply-filters" class="btn-primary">Apply Filters</button>
+      <button id="clear-filters" class="btn-secondary">Clear</button>
+    </div>
+  </div>
+
+  <div id="products-container" class="product-grid">
+    <div class="loading">Loading products...</div>
+  </div>
+
+  <div id="pagination" class="pagination">
+    <button id="prev-page" class="btn-small" disabled>Previous</button>
+    <span id="page-info">Page 1</span>
+    <button id="next-page" class="btn-small">Next</button>
+  </div>
+</main>
+
+<footer>
+  <div class="footer-content">
+    <div class="footer-section">
+      <h3>Handcraft Marketplace</h3>
+      <p>Connecting artisans with buyers worldwide</p>
+    </div>
+    <div class="footer-section">
+      <h3>Quick Links</h3>
+      <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="products.html">Products</a></li>
+      </ul>
+    </div>
+    <div class="footer-section">
+      <h3>For Sellers</h3>
+      <ul>
+        <li><a href="register-store.html">Open a Store</a></li>
+      </ul>
+    </div>
+    <div class="footer-section">
+      <h3>Contact</h3>
+      <p>Email: support@handcraft.com</p>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>&copy; 2025 Handcraft Marketplace. All rights reserved.</p>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const categoryParam = urlParams.get('category');
+    const searchParam = urlParams.get('search');
+
+    let currentPage = 1;
+    const itemsPerPage = 12;
+    let allProducts = [];
+    let filteredProducts = [];
+    let categories = [];
+
+    // Load categories
+    loadCategories();
+
+    // Set initial filter values
+    if (categoryParam) {
+      document.getElementById('category-filter').value = categoryParam;
+    }
+    if (searchParam) {
+      document.getElementById('search-input').value = searchParam;
+    }
+
+    // Load products
+    loadProducts();
+
+    // Event listeners
+    document.getElementById('apply-filters').addEventListener('click', applyFilters);
+    document.getElementById('clear-filters').addEventListener('click', clearFilters);
+    document.getElementById('search-input').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        applyFilters();
+      }
+    });
+    document.getElementById('prev-page').addEventListener('click', () => {
+      if (currentPage > 1) {
+        currentPage--;
+        displayProducts();
+      }
+    });
+    document.getElementById('next-page').addEventListener('click', () => {
+      const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+      if (currentPage < totalPages) {
+        currentPage++;
+        displayProducts();
+      }
+    });
+
+    async function loadCategories() {
+      try {
+        const response = await fetch('/api/categories');
+        const data = await response.json();
+
+        if (data.success) {
+          categories = data.categories || [];
+          const select = document.getElementById('category-filter');
+          select.innerHTML = '<option value="all">All Categories</option>' +
+                  categories.map(cat =>
+                          `<option value="${cat.category_id}">${cat.name}</option>`
+                  ).join('');
+
+          if (categoryParam) {
+            select.value = categoryParam;
+          }
+        }
+      } catch (error) {
+        console.error('Error loading categories:', error);
+      }
+    }
+
+    async function loadProducts() {
+      try {
+        const response = await fetch('/api/products');
+        const data = await response.json();
+
+        if (data.success) {
+          allProducts = data.products || [];
+          applyFilters();
+        } else {
+          document.getElementById('products-container').innerHTML = '<p>Error loading products</p>';
+        }
+      } catch (error) {
+        console.error('Error loading products:', error);
+        document.getElementById('products-container').innerHTML = '<p>Error loading products</p>';
+      }
+    }
+
+    function applyFilters() {
+      const category = document.getElementById('category-filter').value;
+      const search = document.getElementById('search-input').value.toLowerCase();
+      const sort = document.getElementById('sort-filter').value;
+
+      // Filter products
+      filteredProducts = allProducts.filter(product => {
+        // Category filter
+        if (category !== 'all' && product.category_id != category) {
+          return false;
+        }
+
+        // Search filter
+        if (search) {
+          const searchable = `${product.description} ${product.code} ${product.store_name}`.toLowerCase();
+          if (!searchable.includes(search)) {
+            return false;
+          }
+        }
+
+        return true;
+      });
+
+      // Sort products
+      switch(sort) {
+        case 'price-low':
+          filteredProducts.sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
+          break;
+        case 'price-high':
+          filteredProducts.sort((a, b) => parseFloat(b.price) - parseFloat(a.price));
+          break;
+        case 'name':
+          filteredProducts.sort((a, b) => a.description.localeCompare(b.description));
+          break;
+        default:
+          // Newest first (by product code or ID)
+          filteredProducts.sort((a, b) => b.code.localeCompare(a.code));
+      }
+
+      currentPage = 1;
+      displayProducts();
+    }
+
+    function clearFilters() {
+      document.getElementById('category-filter').value = 'all';
+      document.getElementById('search-input').value = '';
+      document.getElementById('sort-filter').value = 'newest';
+      applyFilters();
+    }
+
+    function displayProducts() {
+      const container = document.getElementById('products-container');
+      const start = (currentPage - 1) * itemsPerPage;
+      const end = start + itemsPerPage;
+      const pageProducts = filteredProducts.slice(start, end);
+      const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+
+      if (filteredProducts.length === 0) {
+        container.innerHTML = '<p class="no-results">No products found matching your criteria</p>';
+      } else {
+        container.innerHTML = pageProducts.map(product => `
+                        <div class="product-card">
+                            <div class="product-image">
+                                <img src="../images/product-placeholder.jpg" alt="${product.description.substring(0, 30)}"
+                                     onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 fill=%22%23f0f0f0%22/><text x=%2220%22 y=%2250%22 font-family=%22Arial%22 font-size=%2214%22 fill=%22%23999%22>No Image</text></svg>'">
+                            </div>
+                            <div class="product-info">
+                                <h3>${product.description.substring(0, 40)}${product.description.length > 40 ? '...' : ''}</h3>
+                                <p class="product-price">$${parseFloat(product.price).toFixed(2)}</p>
+                                <p class="product-store">${product.store_name || 'Unknown Store'}</p>
+                                <p class="product-availability">In Stock: ${product.availability}</p>
+                                <a href="product-detail.html?code=${product.code}" class="btn-small">View Details</a>
+                            </div>
+                        </div>
+                    `).join('');
+      }
+
+      // Update pagination
+      document.getElementById('page-info').textContent = `Page ${currentPage} of ${totalPages || 1}`;
+      document.getElementById('prev-page').disabled = currentPage <= 1;
+      document.getElementById('next-page').disabled = currentPage >= totalPages;
+    }
+  });
+</script>
+</body>
+</html>

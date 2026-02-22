@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify 2FA - Handcraft Marketplace</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+    <div class="logo-container">
+        <img src="../images/administrative/logo.jpg" alt="Handcraft Marketplace Logo" onerror="this.style.display='none'">
+        <h1>🎨 Handcraft Marketplace</h1>
+    </div>
+    <nav>
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="products.html">Products</a></li>
+            <li><a href="login.html">Login</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main>
+    <div class="form-container">
+        <h2>Two-Factor Authentication</h2>
+        <p class="form-subtitle">Enter the verification code sent to your email</p>
+
+        <form id="verify-2fa-form" class="form">
+            <div class="form-group">
+                <label for="code">Verification Code</label>
+                <input type="text" id="code" maxlength="6" placeholder="000000" required>
+            </div>
+
+            <div class="form-group">
+                <button type="submit" class="btn-primary btn-full">Verify</button>
+            </div>
+        </form>
+
+        <div class="form-footer">
+            <p>Didn't receive code? <a href="#" id="resend-code">Resend</a></p>
+            <p><a href="login.html">Back to Login</a></p>
+        </div>
+    </div>
+</main>
+
+<footer>
+    <div class="footer-content">
+        <div class="footer-section">
+            <h3>Handcraft Marketplace</h3>
+            <p>Connecting artisans with buyers worldwide</p>
+        </div>
+        <div class="footer-section">
+            <h3>Quick Links</h3>
+            <ul>
+                <li><a href="index.html">Home</a></li>
+                <li><a href="products.html">Products</a></li>
+            </ul>
+        </div>
+    </div>
+    <div class="footer-bottom">
+        <p>&copy; 2025 Handcraft Marketplace. All rights reserved.</p>
+    </div>
+</footer>
+
+<script src="script.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const email = urlParams.get('email');
+        const username = urlParams.get('username');
+
+        const form = document.getElementById('verify-2fa-form');
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const code = document.getElementById('code').value;
+
+            try {
+                const response = await fetch('/api/verify-2fa', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, code })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    if (data.requiresPasswordChange) {
+                        window.location.href = 'change-password.html?forced=true';
+                    } else {
+                        window.location.href = data.redirectTo || 'dashboard.html';
+                    }
+                } else {
+                    alert(data.message || 'Verification failed');
+                }
+            } catch (error) {
+                console.error('2FA verification error:', error);
+                alert('An error occurred');
+            }
+        });
+
+        document.getElementById('resend-code').addEventListener('click', async (e) => {
+            e.preventDefault();
+
+            try {
+                const response = await fetch('/api/resend-2fa', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('New verification code sent!');
+                    if (data.developmentCode) {
+                        console.log('New code:', data.developmentCode);
+                    }
+                } else {
+                    alert(data.message || 'Failed to resend code');
+                }
+            } catch (error) {
+                console.error('Resend error:', error);
+                alert('An error occurred');
+            }
+        });
+    });
+</script>
+</body>
+</html>

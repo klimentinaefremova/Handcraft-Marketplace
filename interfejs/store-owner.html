@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Store Owner Dashboard - Handcraft Marketplace</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+    <div class="logo-container">
+        <img src="../images/administrative/logo.jpg" alt="Handcraft Marketplace Logo" onerror="this.style.display='none'">
+        <h1>🎨 Handcraft Marketplace</h1>
+    </div>
+    <nav>
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="products.html">Products</a></li>
+            <li><a href="#" id="dashboard-link" class="active">Store Owner</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main>
+    <div class="dashboard-header">
+        <h2>Store Owner Dashboard</h2>
+        <p>Welcome, <span id="owner-name">Store Owner</span>!</p>
+    </div>
+
+    <div class="form-group">
+        <label for="store-select">Select Store:</label>
+        <select id="store-select" class="store-selector">
+            <option value="">Loading stores...</option>
+        </select>
+    </div>
+
+    <div id="store-dashboard" style="display: none;">
+        <div class="dashboard-stats">
+            <div class="stat-card pink">
+                <h3>Total Products</h3>
+                <div class="stat-number" id="total-products">0</div>
+            </div>
+            <div class="stat-card blue">
+                <h3>Total Orders</h3>
+                <div class="stat-number" id="total-orders">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Revenue</h3>
+                <div class="stat-number" id="total-revenue">$0</div>
+            </div>
+            <div class="stat-card pink">
+                <h3>Avg Rating</h3>
+                <div class="stat-number" id="avg-rating">0.0</div>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="products">Products</button>
+            <button class="tab-btn" data-tab="orders">Orders</button>
+            <button class="tab-btn" data-tab="employees">Employees</button>
+            <button class="tab-btn" data-tab="reports">Reports</button>
+            <button class="tab-btn" data-tab="add-product">Add Product</button>
+            <button class="tab-btn" data-tab="add-employee">Add Employee</button>
+        </div>
+
+        <!-- Products Tab -->
+        <div id="products-tab" class="tab-content active">
+            <div class="dashboard-section">
+                <h3>Store Products</h3>
+                <div class="table-responsive">
+                    <table id="products-table">
+                        <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Description</th>
+                            <th>Price</th>
+                            <th>Available</th>
+                            <th>Category</th>
+                            <th>Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody id="products-list">
+                        <tr><td colspan="6" class="loading">Loading products...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Orders Tab -->
+        <div id="orders-tab" class="tab-content">
+            <div class="dashboard-section">
+                <h3>Store Orders</h3>
+                <div class="table-responsive">
+                    <table id="orders-table">
+                        <thead>
+                        <tr>
+                            <th>Order #</th>
+                            <th>Client</th>
+                            <th>Date</th>
+                            <th>Status</th>
+                            <th>Total</th>
+                            <th>Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody id="orders-list">
+                        <tr><td colspan="6" class="loading">Loading orders...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Employees Tab -->
+        <div id="employees-tab" class="tab-content">
+            <div class="dashboard-section">
+                <h3>Store Employees</h3>
+                <div class="table-responsive">
+                    <table id="employees-table">
+                        <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Date Hired</th>
+                            <th>Permissions</th>
+                            <th>Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody id="employees-list">
+                        <tr><td colspan="6" class="loading">Loading employees...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reports Tab -->
+        <div id="reports-tab" class="tab-content">
+            <div class="dashboard-section">
+                <h3>Generate Reports</h3>
+                <div class="form-group">
+                    <label for="report-period">Report Period</label>
+                    <select id="report-period">
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="yearly">Yearly</option>
+                        <option value="custom">Custom Range</option>
+                    </select>
+                </div>
+                <div id="custom-date-range" style="display: none;">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="report-start">Start Date</label>
+                            <input type="date" id="report-start">
+                        </div>
+                        <div class="form-group">
+                            <label for="report-end">End Date</label>
+                            <input type="date" id="report-end">
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="report-type">Report Type</label>
+                    <select id="report-type">
+                        <option value="sales">Sales Report</option>
+                        <option value="products">Products Report</option>
+                        <option value="employees">Employees Report</option>
+                        <option value="financial">Financial Report</option>
+                    </select>
+                </div>
+                <button id="generate-store-report" class="btn-primary">Generate Report</button>
+                <div id="report-results" style="margin-top: 2rem;"></div>
+            </div>
+        </div>
+
+        <!-- Add Product Tab -->
+        <div id="add-product-tab" class="tab-content">
+            <div class="dashboard-section">
+                <h3>Add New Product</h3>
+                <form id="add-product-form" class="form">
+                    <div class="form-group">
+                        <label for="product-description">Description *</label>
+                        <textarea id="product-description" rows="3" required></textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="product-price">Price ($) *</label>
+                            <input type="number" id="product-price" step="0.01" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="product-availability">Availability *</label>
+                            <input type="number" id="product-availability" min="0" required>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="product-weight">Weight (kg) *</label>
+                            <input type="number" id="product-weight" step="0.01" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="product-dimensions">Dimensions (WxLxD) *</label>
+                            <input type="text" id="product-dimensions" placeholder="10x15x5" required>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="product-production-time">Production Time (days) *</label>
+                            <input type="number" id="product-production-time" min="1" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="product-category">Category *</label>
+                            <select id="product-category" required>
+                                <option value="">Select Category</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="product-images">Image URLs (one per line)</label>
+                        <textarea id="product-images" rows="3" placeholder="https://example.com/image1.jpg"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="product-colors">Colors (comma separated)</label>
+                        <input type="text" id="product-colors" placeholder="Red, Blue, Green">
+                    </div>
+
+                    <button type="submit" class="btn-primary">Add Product</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Add Employee Tab -->
+        <div id="add-employee-tab" class="tab-content">
+            <div class="dashboard-section">
+                <h3>Add New Employee</h3>
+                <form id="add-employee-form" class="form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="employee-first-name">First Name *</label>
+                            <input type="text" id="employee-first-name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="employee-last-name">Last Name *</label>
+                            <input type="text" id="employee-last-name" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="employee-ssn">SSN (13 digits) *</label>
+                        <input type="text" id="employee-ssn" maxlength="13" pattern="\d{13}" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="employee-email">Email *</label>
+                        <input type="email" id="employee-email" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="employee-password">Password *</label>
+                        <input type="password" id="employee-password" required>
+                        <small class="password-hint">At least 8 characters with uppercase, lowercase, number, and special character</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="employee-date-hire">Date of Hire *</label>
+                        <input type="date" id="employee-date-hire" required>
+                    </div>
+
+                    <button type="submit" class="btn-primary">Add Employee</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="no-store-message" style="display: none; text-align: center; padding: 3rem;">
+        <h3>You don't have any stores yet</h3>
+        <p>Please contact support if you believe this is an error.</p>
+    </div>
+</main>
+
+<div id="edit-product-modal" class="modal" style="display: none;">
+    <div class="modal-content modal-large">
+        <span class="close">&times;</span>
+        <h2>Edit Product</h2>
+        <form id="edit-product-form" class="form">
+            <input type="hidden" id="edit-product-code">
+
+            <div class="form-group">
+                <label for="edit-product-description">Description</label>
+                <textarea id="edit-product-description" rows="3"></textarea>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="edit-product-price">Price ($)</label>
+                    <input type="number" id="edit-product-price" step="0.01" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="edit-product-availability">Availability</label>
+                    <input type="number" id="edit-product-availability" min="0">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="edit-product-weight">Weight (kg)</label>
+                    <input type="number" id="edit-product-weight" step="0.01" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="edit-product-dimensions">Dimensions</label>
+                    <input type="text" id="edit-product-dimensions">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="edit-product-production-time">Production Time (days)</label>
+                    <input type="number" id="edit-product-production-time" min="1">
+                </div>
+                <div class="form-group">
+                    <label for="edit-product-category">Category</label>
+                    <select id="edit-product-category">
+                        <option value="">Select Category</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="edit-product-images">Image URLs (one per line)</label>
+                <textarea id="edit-product-images" rows="3"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="edit-product-colors">Colors (comma separated)</label>
+                <input type="text" id="edit-product-colors">
+            </div>
+
+            <button type="submit" class="btn-primary">Update Product</button>
+        </form>
+    </div>
+</div>
+
+<div id="edit-employee-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2>Edit Employee</h2>
+        <form id="edit-employee-form" class="form">
+            <input type="hidden" id="edit-employee-id">
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="edit-employee-first-name">First Name</label>
+                    <input type="text" id="edit-employee-first-name">
+                </div>
+                <div class="form-group">
+                    <label for="edit-employee-last-name">Last Name</label>
+                    <input type="text" id="edit-employee-last-name">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="edit-employee-email">Email</label>
+                <input type="email" id="edit-employee-email">
+            </div>
+
+            <div class="form-group">
+                <label for="edit-employee-status">Status</label>
+                <select id="edit-employee-status">
+                    <option value="active">Active</option>
+                    <option value="suspended">Suspended</option>
+                    <option value="promoted">Promote to Manager</option>
+                </select>
+            </div>
+
+            <button type="submit" class="btn-primary">Update Employee</button>
+        </form>
+    </div>
+</div>
+
+<footer>
+    <div class="footer-content">
+        <div class="footer-section">
+            <h3>Handcraft Marketplace</h3>
+            <p>Store Owner Portal</p>
+        </div>
+        <div class="footer-section">
+            <h3>Quick Links</h3>
+            <ul>
+                <li><a href="index.html">Home</a></li>
+                <li><a href="products.html">Products</a></li>
+            </ul>
+        </div>
+    </div>
+    <div class="footer-bottom">
+        <p>&copy; 2025 Handcraft Marketplace. All rights reserved.</p>
+    </div>
+</footer>
+
+<script src="script.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', async () => {
+        const user = await loadUserData();
+        if (!user || user.userType !== 'store_owner') {
+            window.location.href = 'index.html';
+            return;
+        }
+
+        document.getElementById('owner-name').textContent = `${user.firstName} ${user.lastName || ''}`;
+
+        // Load stores
+        const stores = user.stores || [];
+        const storeSelect = document.getElementById('store-select');
+
+        if (stores.length === 0) {
+            storeSelect.innerHTML = '<option value="">No stores found</option>';
+            document.getElementById('no-store-message').style.display = 'block';
+        } else {
+            storeSelect.innerHTML = stores.map(store =>
+                `<option value="${store.store_id}">${store.name} (${store.store_id})</option>`
+            ).join('');
+
+            // Load first store by default
+            loadStoreData(stores[0].store_id);
+        }
+
+        storeSelect.addEventListener('change', (e) => {
+            if (e.target.value) {
+                loadStoreData(e.target.value);
+            }
+        });
+
+        // Tab switching
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(`${btn.dataset.tab}-tab`).classList.add('active');
+            });
+        });
+
+        // Report period toggle
+        document.getElementById('report-period').addEventListener('change', (e) => {
+            document.getElementById('custom-date-range').style.display =
+                e.target.value === 'custom' ? 'block' : 'none';
+        });
+
+        // Load categories for product forms
+        loadCategories();
+
+        // Add product form
+        document.getElementById('add-product-form').addEventListener('submit', addProduct);
+
+        // Add employee form
+        document.getElementById('add-employee-form').addEventListener('submit', addEmployee);
+
+        // Generate report
+        document.getElementById('generate-store-report').addEventListener('click', generateStoreReport);
+    });
+
+    async function loadStoreData(storeId) {
+        document.getElementById('store-dashboard').style.display = 'block';
+        document.getElementById('no-store-message').style.display = 'none';
+
+        // Load store stats
+        try {
+            const response = await fetch(`/api/store-stats?storeId=${storeId}`);
+            const data = await response.json();
+
+            if (data.success) {
+                document.getElementById('total-products').textContent = data.stats.total_products || 0;
+                document.getElementById('total-orders').textContent = data.stats.total_orders || 0;
+                document.getElementById('total-revenue').textContent = `$${parseFloat(data.stats.total_revenue || 0).toFixed(2)}`;
+                document.getElementById('avg-rating').textContent = parseFloat(data.stats.avg_rating || 0).toFixed(1);
+            }
+        } catch (error) {
+            console.error('Error loading stats:', error);
+        }
+
+        // Load products
+        loadProducts(storeId);
+
+        // Load orders
+        loadStoreOrders(storeId);
+
+        // Load employees
+        loadEmployees(storeId);
+    }
+
+    async function loadProducts(storeId) {
+        try {
+            const response = await fetch(`/api/store-products?storeId=${storeId}`);
+            const data = await response.json();
+
+            const tbody = document.getElementById('products-list');
+            if (data.success && data.products.length > 0) {
+                tbody.innerHTML = data.products.map(product => `
+                        <tr>
+                            <td>${product.code}</td>
+                            <td>${product.description.substring(0, 30)}${product.description.length > 30 ? '...' : ''}</td>
+                            <td>$${parseFloat(product.price).toFixed(2)}</td>
+                            <td>${product.availability}</td>
+                            <td>${product.category_name || 'General'}</td>
+                            <td>
+                                <button class="btn-small" onclick="editProduct('${product.code}')">Edit</button>
+                                <button class="btn-small" style="background: var(--danger);" onclick="deleteProduct('${product.code}', '${storeId}')">Delete</button>
+                            </td>
+                        </tr>
+                    `).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="6">No products found</td></tr>';
+            }
+        } catch (error) {
+            console.error('Error loading products:', error);
+            document.getElementById('products-list').innerHTML = '<tr><td colspan="6">Error loading products</td></tr>';
+        }
+    }
+
+    async function loadStoreOrders(storeId) {
+        try {
+            const response = await fetch(`/api/store-orders?storeId=${storeId}`);
+            const data = await response.json();
+
+            const tbody = document.getElementById('orders-list');
+            if (data.success && data.orders.length > 0) {
+                tbody.innerHTML = data.orders.map(order => {
+                    const total = order.items ? order.items.reduce((sum, item) =>
+                        sum + (item.price * item.quantity), 0) : 0;
+                    return `
+                            <tr>
+                                <td>${order.order_num}</td>
+                                <td>${order.first_name} ${order.last_name}</td>
+                                <td>${new Date(order.order_date).toLocaleDateString()}</td>
+                                <td><span class="status-badge status-${order.status}">${order.status}</span></td>
+                                <td>$${total.toFixed(2)}</td>
+                                <td>
+                                    <button class="btn-small" onclick="viewOrder('${order.order_num}')">View</button>
+                                </td>
+                            </tr>
+                        `;
+                }).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="6">No orders found</td></tr>';
+            }
+        } catch (error) {
+            console.error('Error loading orders:', error);
+            document.getElementById('orders-list').innerHTML = '<tr><td colspan="6">Error loading orders</td></tr>';
+        }
+    }
+
+    async function loadEmployees(storeId) {
+        try {
+            const response = await fetch(`/api/store-employees?storeId=${storeId}`);
+            const data = await response.json();
+
+            const tbody = document.getElementById('employees-list');
+            if (data.success && data.employees.length > 0) {
+                tbody.innerHTML = data.employees.map(emp => `
+                        <tr>
+                            <td>${emp.id}</td>
+                            <td>${emp.first_name} ${emp.last_name}</td>
+                            <td>${emp.email}</td>
+                            <td>${emp.date_of_hire || 'N/A'}</td>
+                            <td><span class="status-badge">${emp.permission_type || 'EMPLOYEE'}</span></td>
+                            <td>
+                                <button class="btn-small" onclick="editEmployee('${emp.id}')">Edit</button>
+                                <button class="btn-small" style="background: var(--danger);" onclick="deleteEmployee('${emp.id}', '${storeId}')">Delete</button>
+                            </td>
+                        </tr>
+                    `).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="6">No employees found</td></tr>';
+            }
+        } catch (error) {
+            console.error('Error loading employees:', error);
+            document.getElementById('employees-list').innerHTML = '<tr><td colspan="6">Error loading employees</td></tr>';
+        }
+    }
+
+    async function loadCategories() {
+        try {
+            const response = await fetch('/api/categories');
+            const data = await response.json();
+
+            if (data.success) {
+                const options = data.categories.map(cat =>
+                    `<option value="${cat.category_id}">${cat.name}</option>`
+                ).join('');
+
+                document.getElementById('product-category').innerHTML = '<option value="">Select Category</option>' + options;
+                document.getElementById('edit-product-category').innerHTML = '<option value="">Select Category</option>' + options;
+            }
+        } catch (error) {
+            console.error('Error loading categories:', error);
+        }
+    }
+
+    async function addProduct(e) {
+        e.preventDefault();
+
+        const storeId = document.getElementById('store-select').value;
+        if (!storeId) {
+            alert('Please select a store first');
+            return;
+        }
+
+        // FIXED: Added validation for required fields
+        const description = document.getElementById('product-description').value;
+        const price = document.getElementById('product-price').value;
+        const availability = document.getElementById('product-availability').value;
+        const category = document.getElementById('product-category').value;
+
+        if (!description) {
+            alert('Please enter a product description');
+            return;
+        }
+
+        if (!price || parseFloat(price) <= 0) {
+            alert('Please enter a valid price');
+            return;
+        }
+
+        if (!availability || parseInt(availability) < 0) {
+            alert('Please enter a valid availability quantity');
+            return;
+        }
+
+        if (!category) {
+            alert('Please select a category');
+            return;
+        }
+
+        const formData = {
+            description: description,
+            price: parseFloat(price),
+            availability: parseInt(availability),
+            weight: parseFloat(document.getElementById('product-weight').value) || 0,
+            dimensions: document.getElementById('product-dimensions').value || '0x0x0',
+            production_time: parseInt(document.getElementById('product-production-time').value) || 1,
+            category_id: parseInt(category),
+            images: document.getElementById('product-images').value.split('\n').filter(url => url.trim()),
+            colors: document.getElementById('product-colors').value.split(',').map(c => c.trim()).filter(c => c),
+            storeId: storeId
+        };
+
+        try {
+            const response = await fetch('/api/add-product', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData)
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                alert('Product added successfully! Product code: ' + data.productCode);
+                document.getElementById('add-product-form').reset();
+                loadProducts(storeId);
+                // Switch to products tab
+                document.querySelector('[data-tab="products"]').click();
+            } else {
+                alert(data.message || 'Failed to add product');
+            }
+        } catch (error) {
+            console.error('Error adding product:', error);
+            alert('An error occurred: ' + error.message);
+        }
+    }
+
+    async function addEmployee(e) {
+        e.preventDefault();
+
+        const storeId = document.getElementById('store-select').value;
+        if (!storeId) {
+            alert('Please select a store first');
+            return;
+        }
+
+        const password = document.getElementById('employee-password').value;
+        const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+        if (!passwordRegex.test(password)) {
+            alert('Password must have at least 8 characters, including uppercase, lowercase, number and special character');
+            return;
+        }
+
+        const formData = {
+            firstName: document.getElementById('employee-first-name').value,
+            lastName: document.getElementById('employee-last-name').value,
+            ssn: document.getElementById('employee-ssn').value,
+            email: document.getElementById('employee-email').value,
+            password: password,
+            dateOfHire: document.getElementById('employee-date-hire').value,
+            storeId: storeId
+        };
+
+        try {
+            const response = await fetch('/api/register-employee', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData)
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                alert('Employee added successfully!');
+                document.getElementById('add-employee-form').reset();
+                loadEmployees(storeId);
+                // Switch to employees tab
+                document.querySelector('[data-tab="employees"]').click();
+            } else {
+                alert(data.message || 'Failed to add employee');
+            }
+        } catch (error) {
+            console.error('Error adding employee:', error);
+            alert('An error occurred');
+        }
+    }
+
+    window.editProduct = async (productCode) => {
+        try {
+            const response = await fetch(`/api/product-by-code?code=${productCode}`);
+            const data = await response.json();
+
+            if (data.success) {
+                const product = data.product;
+
+                document.getElementById('edit-product-code').value = product.code;
+                document.getElementById('edit-product-description').value = product.description;
+                document.getElementById('edit-product-price').value = product.price;
+                document.getElementById('edit-product-availability').value = product.availability;
+                document.getElementById('edit-product-weight').value = product.weight;
+                document.getElementById('edit-product-dimensions').value = product.dimensions;
+                document.getElementById('edit-product-production-time').value = product.production_time;
+                document.getElementById('edit-product-category').value = product.category_id;
+
+                if (product.images) {
+                    document.getElementById('edit-product-images').value = product.images.map(img => img.image).join('\n');
+                }
+
+                if (product.colors) {
+                    document.getElementById('edit-product-colors').value = product.colors.map(c => c.color).join(', ');
+                }
+
+                document.getElementById('edit-product-modal').style.display = 'block';
+            }
+        } catch (error) {
+            console.error('Error loading product:', error);
+            alert('Failed to load product details');
+        }
+    };
+
+    document.getElementById('edit-product-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const storeId = document.getElementById('store-select').value;
+        const formData = {
+            code: document.getElementById('edit-product-code').value,
+            description: document.getElementById('edit-product-description').value,
+            price: parseFloat(document.getElementById('edit-product-price').value),
+            availability: parseInt(document.getElementById('edit-product-availability').value),
+            weight: parseFloat(document.getElementById('edit-product-weight').value),
+            dimensions: document.getElementById('edit-product-dimensions').value,
+            production_time: parseInt(document.getElementById('edit-product-production-time').value),
+            category_id: parseInt(document.getElementById('edit-product-category').value),
+            images: document.getElementById('edit-product-images').value.split('\n').filter(url => url.trim()),
+            colors: document.getElementById('edit-product-colors').value.split(',').map(c => c.trim()).filter(c => c),
+            storeId: storeId
+        };
+
+        try {
+            const response = await fetch('/api/update-product', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData)
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                alert('Product updated successfully!');
+                document.getElementById('edit-product-modal').style.display = 'none';
+                loadProducts(storeId);
+            } else {
+                alert(data.message || 'Failed to update product');
+            }
+        } catch (error) {
+            console.error('Error updating product:', error);
+            alert('An error occurred');
+        }
+    });
+
+    window.deleteProduct = async (productCode, storeId) => {
+        if (!confirm('Are you sure you want to delete this product?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/delete-product', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ productCode, storeId })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                alert('Product deleted successfully!');
+                loadProducts(storeId);
+            } else {
+                alert(data.message || 'Failed to delete product');
+            }
+        } catch (error) {
+            console.error('Error deleting product:', error);
+            alert('An error occurred');
+        }
+    };
+
+    window.editEmployee = (employeeId) => {
+        // Load employee data and show edit modal
+        document.getElementById('edit-employee-id').value = employeeId;
+        document.getElementById('edit-employee-modal').style.display = 'block';
+    };
+
+    window.deleteEmployee = async (employeeId, storeId) => {
+        if (!confirm('Are you sure you want to delete this employee?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/delete-employee', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ employeeId, storeId })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                alert('Employee deleted successfully!');
+                loadEmployees(storeId);
+            } else {
+                alert(data.message || 'Failed to delete employee');
+            }
+        } catch (error) {
+            console.error('Error deleting employee:', error);
+            alert('An error occurred');
+        }
+    };
+
+    document.getElementById('edit-employee-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const storeId = document.getElementById('store-select').value;
+        const formData = {
+            employeeId: document.getElementById('edit-employee-id').value,
+            storeId: storeId,
+            firstName: document.getElementById('edit-employee-first-name').value,
+            lastName: document.getElementById('edit-employee-last-name').value,
+            email: document.getElementById('edit-employee-email').value,
+            status: document.getElementById('edit-employee-status').value
+        };
+
+        try {
+            const response = await fetch('/api/update-employee', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData)
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                alert('Employee updated successfully!');
+                document.getElementById('edit-employee-modal').style.display = 'none';
+                loadEmployees(storeId);
+            } else {
+                alert(data.message || 'Failed to update employee');
+            }
+        } catch (error) {
+            console.error('Error updating employee:', error);
+            alert('An error occurred');
+        }
+    });
+
+    async function generateStoreReport() {
+        const storeId = document.getElementById('store-select').value;
+        const period = document.getElementById('report-period').value;
+        const type = document.getElementById('report-type').value;
+
+        let startDate, endDate;
+        if (period === 'custom') {
+            startDate = document.getElementById('report-start').value;
+            endDate = document.getElementById('report-end').value;
+            if (!startDate || !endDate) {
+                alert('Please select start and end dates');
+                return;
+            }
+        } else {
+            // Calculate dates based on period
+            const end = new Date();
+            const start = new Date();
+
+            switch(period) {
+                case 'daily':
+                    start.setDate(start.getDate() - 1);
+                    break;
+                case 'weekly':
+                    start.setDate(start.getDate() - 7);
+                    break;
+                case 'monthly':
+                    start.setMonth(start.getMonth() - 1);
+                    break;
+                case 'quarterly':
+                    start.setMonth(start.getMonth() - 3);
+                    break;
+                case 'yearly':
+                    start.setFullYear(start.getFullYear() - 1);
+                    break;
+            }
+
+            startDate = start.toISOString().split('T')[0];
+            endDate = end.toISOString().split('T')[0];
+        }
+
+        document.getElementById('report-results').innerHTML = `
+                <div class="dashboard-section">
+                    <h4>Generating Report...</h4>
+                    <div class="loading">Please wait</div>
+                </div>
+            `;
+
+        try {
+            const response = await fetch('/api/generate-report', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    storeId,
+                    period,
+                    startDate,
+                    endDate,
+                    type
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                document.getElementById('report-results').innerHTML = `
+                        <div class="dashboard-section">
+                            <h4>Report Generated Successfully</h4>
+                            <p><strong>Report ID:</strong> ${data.reportId}</p>
+                            <p><strong>Period:</strong> ${data.report.period}</p>
+                            <p><strong>Date Range:</strong> ${data.report.startDate} to ${data.report.endDate}</p>
+                            <p><strong>Type:</strong> ${data.report.type}</p>
+                            <p><strong>Generated:</strong> ${new Date(data.report.generatedAt).toLocaleString()}</p>
+                            <button class="btn-small" onclick="downloadReport('${data.reportId}')">Download Report</button>
+                        </div>
+                    `;
+            } else {
+                document.getElementById('report-results').innerHTML = `
+                        <div class="dashboard-section">
+                            <p class="error">Failed to generate report: ${data.message}</p>
+                        </div>
+                    `;
+            }
+        } catch (error) {
+            console.error('Error generating report:', error);
+            document.getElementById('report-results').innerHTML = `
+                    <div class="dashboard-section">
+                        <p class="error">An error occurred while generating the report</p>
+                    </div>
+                `;
+        }
+    }
+
+    window.viewOrder = (orderNum) => {
+        alert(`View order ${orderNum} - Feature coming soon`);
+    };
+
+    window.downloadReport = (reportId) => {
+        alert(`Download report ${reportId} - Feature coming soon`);
+    };
+
+    // Close modal functionality
+    document.querySelectorAll('.modal .close').forEach(closeBtn => {
+        closeBtn.addEventListener('click', () => {
+            closeBtn.closest('.modal').style.display = 'none';
+        });
+    });
+
+    window.addEventListener('click', (event) => {
+        if (event.target.classList.contains('modal')) {
+            event.target.style.display = 'none';
+        }
+    });
+</script>
+</body>
+</html>

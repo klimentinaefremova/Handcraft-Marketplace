@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register as Client - Handcraft Marketplace</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="logo-container">
+    <img src="../images/administrative/logo.jpg" alt="Handcraft Marketplace Logo" onerror="this.style.display='none'">
+    <h1>🎨 Handcraft Marketplace</h1>
+  </div>
+  <nav>
+    <ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="products.html">Products</a></li>
+      <li><a href="login.html">Login</a></li>
+      <li><a href="register.html" class="active">Register</a></li>
+      <li><a href="register-store.html">Open Store</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main>
+  <div class="form-container">
+    <h2>Create Client Account</h2>
+    <p class="form-subtitle">Join as a buyer to shop from our artisans</p>
+
+    <form id="register-form" class="form">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="first-name">First Name *</label>
+          <input type="text" id="first-name" name="first-name" required>
+        </div>
+
+        <div class="form-group">
+          <label for="last-name">Last Name *</label>
+          <input type="text" id="last-name" name="last-name" required>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="email">Email *</label>
+        <input type="email" id="email" name="email" required>
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password *</label>
+        <input type="password" id="password" name="password" required>
+        <small class="password-hint">At least 8 characters with uppercase, lowercase, number, and special character</small>
+      </div>
+
+      <div class="form-group">
+        <label for="confirm-password">Confirm Password *</label>
+        <input type="password" id="confirm-password" name="confirm-password" required>
+      </div>
+
+      <h3>Delivery Address (Optional)</h3>
+      <p class="form-note">You can add delivery addresses later in your dashboard</p>
+
+      <div class="form-group">
+        <label for="address">Street Address</label>
+        <input type="text" id="address" name="address" placeholder="st. Center num.10">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="city">City</label>
+          <input type="text" id="city" name="city" placeholder="Skopje">
+        </div>
+        <div class="form-group">
+          <label for="postcode">Postcode</label>
+          <input type="text" id="postcode" name="postcode" placeholder="1000">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="country">Country</label>
+        <input type="text" id="country" name="country" placeholder="North Macedonia">
+      </div>
+
+      <div class="form-group checkbox">
+        <input type="checkbox" id="is-default-address" name="is-default-address" checked>
+        <label for="is-default-address">Set as default delivery address</label>
+      </div>
+
+      <div class="form-group">
+        <button type="submit" class="btn-primary btn-full">Register</button>
+      </div>
+    </form>
+
+    <div class="form-footer">
+      <p>Already have an account? <a href="login.html">Login here</a></p>
+      <p>Want to sell your products? <a href="register-store.html">Register as a store owner</a></p>
+    </div>
+  </div>
+</main>
+
+<div id="verification-modal" class="modal" style="display: none;">
+  <div class="modal-content">
+    <span class="close">&times;</span>
+    <h2>Verify Your Email</h2>
+    <p>We've sent a verification code to <span id="verification-email"></span></p>
+    <p class="code-expiry">Code expires in 30 seconds</p>
+    <div class="form-group">
+      <label for="verification-code">Enter 6-digit code:</label>
+      <input type="text" id="verification-code" maxlength="6" placeholder="000000">
+    </div>
+    <div class="form-group">
+      <button id="verify-code-btn" class="btn-primary">Verify & Complete Registration</button>
+    </div>
+    <p class="resend-link">Didn't receive code? <a href="#" id="resend-code">Resend</a></p>
+    <p class="resend-link">Time remaining: <span id="countdown">30</span> seconds</p>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-content">
+    <div class="footer-section">
+      <h3>Handcraft Marketplace</h3>
+      <p>Connecting artisans with buyers worldwide</p>
+    </div>
+    <div class="footer-section">
+      <h3>Quick Links</h3>
+      <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="products.html">Products</a></li>
+        <li><a href="login.html">Login</a></li>
+        <li><a href="register.html">Register</a></li>
+      </ul>
+    </div>
+    <div class="footer-section">
+      <h3>For Sellers</h3>
+      <ul>
+        <li><a href="register-store.html">Open a Store</a></li>
+        <li><a href="#">Seller Guidelines</a></li>
+        <li><a href="#">Pricing</a></li>
+      </ul>
+    </div>
+    <div class="footer-section">
+      <h3>Contact</h3>
+      <p>Email: support@handcraft.com</p>
+      <p>Phone: +1 (555) 123-4567</p>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>&copy; 2025 Handcraft Marketplace. All rights reserved.</p>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const registerForm = document.getElementById('register-form');
+    const modal = document.getElementById('verification-modal');
+    const closeBtn = document.querySelector('.close');
+    const verifyBtn = document.getElementById('verify-code-btn');
+    const resendLink = document.getElementById('resend-code');
+    const verificationCode = document.getElementById('verification-code');
+    const countdownEl = document.getElementById('countdown');
+    let currentEmail = '';
+    let countdownInterval;
+
+    function startCountdown(seconds) {
+      if (countdownInterval) clearInterval(countdownInterval);
+      countdownEl.textContent = seconds;
+      countdownInterval = setInterval(() => {
+        let current = parseInt(countdownEl.textContent);
+        if (current <= 1) {
+          clearInterval(countdownInterval);
+          countdownEl.textContent = '0';
+        } else {
+          countdownEl.textContent = current - 1;
+        }
+      }, 1000);
+    }
+
+    registerForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const password = document.getElementById('password').value;
+      const confirmPassword = document.getElementById('confirm-password').value;
+
+      if (password !== confirmPassword) {
+        alert('Passwords do not match');
+        return;
+      }
+
+      // Password validation
+      const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+      if (!passwordRegex.test(password)) {
+        alert('Password must have at least 8 characters, including uppercase, lowercase, number and special character');
+        return;
+      }
+
+      const formData = {
+        firstName: document.getElementById('first-name').value,
+        lastName: document.getElementById('last-name').value,
+        email: document.getElementById('email').value,
+        password: password,
+        address: document.getElementById('address').value || null,
+        city: document.getElementById('city').value || null,
+        postcode: document.getElementById('postcode').value || null,
+        country: document.getElementById('country').value || null,
+        isDefaultAddress: document.getElementById('is-default-address').checked
+      };
+
+      try {
+        const response = await fetch('/api/client-register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          currentEmail = data.email;
+          document.getElementById('verification-email').textContent = currentEmail;
+          modal.style.display = 'block';
+          startCountdown(30);
+
+          if (data.developmentCode) {
+            console.log('🔐 Development verification code:', data.developmentCode);
+            // Auto-fill for development
+            verificationCode.value = data.developmentCode;
+          }
+        } else {
+          alert(data.message || 'Registration failed');
+        }
+      } catch (error) {
+        console.error('Registration error:', error);
+        alert('An error occurred during registration');
+      }
+    });
+
+    verifyBtn.addEventListener('click', async () => {
+      const code = verificationCode.value;
+
+      if (!code || code.length !== 6) {
+        alert('Please enter a valid 6-digit code');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/verify-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: currentEmail,
+            code: code
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          clearInterval(countdownInterval);
+          alert('Registration successful! You can now login.');
+          window.location.href = data.redirectTo || 'login.html';
+        } else {
+          alert(data.message || 'Verification failed');
+        }
+      } catch (error) {
+        console.error('Verification error:', error);
+        alert('An error occurred during verification');
+      }
+    });
+
+    resendLink.addEventListener('click', async (e) => {
+      e.preventDefault();
+
+      try {
+        const response = await fetch('/api/resend-verification', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: currentEmail })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          alert('New verification code sent!');
+          startCountdown(30);
+          if (data.developmentCode) {
+            console.log('🔐 New development code:', data.developmentCode);
+            verificationCode.value = data.developmentCode;
+          }
+        } else {
+          alert(data.message || 'Failed to resend code');
+        }
+      } catch (error) {
+        console.error('Resend error:', error);
+        alert('An error occurred');
+      }
+    });
+
+    closeBtn.addEventListener('click', () => {
+      modal.style.display = 'none';
+      clearInterval(countdownInterval);
+    });
+
+    window.addEventListener('click', (event) => {
+      if (event.target === modal) {
+        modal.style.display = 'none';
+        clearInterval(countdownInterval);
+      }
+    });
+  });
+</script>
+</body>
+</html>

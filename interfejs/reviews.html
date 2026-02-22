@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Write a Review - Handcraft Marketplace</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+    <div class="logo-container">
+        <img src="../images/administrative/logo.jpg" alt="Handcraft Marketplace Logo" onerror="this.style.display='none'">
+        <h1>🎨 Handcraft Marketplace</h1>
+    </div>
+    <nav>
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="products.html">Products</a></li>
+            <li><a href="#" id="dashboard-link">Dashboard</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main>
+    <div class="form-container">
+        <h2>Write a Review</h2>
+        <p class="form-subtitle">Share your experience with this product</p>
+
+        <div id="product-info" class="review-product-info">
+            <div class="loading">Loading product information...</div>
+        </div>
+
+        <form id="review-form" class="form">
+            <div class="form-group">
+                <label>Your Rating *</label>
+                <div class="rating-selector">
+                    <div class="stars">
+                        <span class="star" data-rating="1">★</span>
+                        <span class="star" data-rating="2">★</span>
+                        <span class="star" data-rating="3">★</span>
+                        <span class="star" data-rating="4">★</span>
+                        <span class="star" data-rating="5">★</span>
+                    </div>
+                    <input type="hidden" id="rating" value="0">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="comment">Your Review</label>
+                <textarea id="comment" rows="5" placeholder="Tell others about your experience with this product..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <button type="submit" class="btn-primary btn-full">Submit Review</button>
+            </div>
+        </form>
+
+        <div class="form-footer">
+            <a href="#" onclick="history.back()">Go Back</a>
+        </div>
+    </div>
+</main>
+
+<footer>
+    <div class="footer-content">
+        <div class="footer-section">
+            <h3>Handcraft Marketplace</h3>
+            <p>Share your feedback</p>
+        </div>
+        <div class="footer-section">
+            <h3>Quick Links</h3>
+            <ul>
+                <li><a href="index.html">Home</a></li>
+                <li><a href="products.html">Products</a></li>
+            </ul>
+        </div>
+    </div>
+    <div class="footer-bottom">
+        <p>&copy; 2025 Handcraft Marketplace. All rights reserved.</p>
+    </div>
+</footer>
+
+<script src="script.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', async () => {
+        const auth = await checkAuth();
+
+        if (!auth.success) {
+            window.location.href = 'login.html';
+            return;
+        }
+
+        if (auth.user.userType !== 'client') {
+            alert('Only clients can write reviews');
+            window.location.href = 'index.html';
+            return;
+        }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const orderNum = urlParams.get('order');
+        const productCode = urlParams.get('product');
+
+        if (!productCode && !orderNum) {
+            window.location.href = 'products.html';
+            return;
+        }
+
+        // If order number is provided, load product from order
+        if (orderNum) {
+            loadProductFromOrder(orderNum);
+        } else {
+            loadProductDetails(productCode);
+        }
+
+        // Star rating interaction
+        const stars = document.querySelectorAll('.star');
+        const ratingInput = document.getElementById('rating');
+
+        stars.forEach(star => {
+            star.addEventListener('mouseover', function() {
+                const rating = parseInt(this.dataset.rating);
+                highlightStars(rating);
+            });
+
+            star.addEventListener('mouseout', function() {
+                const currentRating = parseInt(ratingInput.value);
+                highlightStars(currentRating);
+            });
+
+            star.addEventListener('click', function() {
+                const rating = parseInt(this.dataset.rating);
+                ratingInput.value = rating;
+                highlightStars(rating);
+            });
+        });
+
+        function highlightStars(rating) {
+            stars.forEach((star, index) => {
+                if (index < rating) {
+                    star.style.color = 'var(--pink)';
+                } else {
+                    star.style.color = 'var(--light-gray)';
+                }
+            });
+        }
+
+        // Form submission
+        document.getElementById('review-form').addEventListener('submit', submitReview);
+    });
+
+    async function loadProductFromOrder(orderNum) {
+        try {
+            const response = await fetch('/api/user-orders');
+            const data = await response.json();
+
+            if (data.success) {
+                const order = data.orders.find(o => o.order_num === orderNum);
+                if (order && order.items && order.items.length > 0) {
+                    // For simplicity, review the first product in the order
+                    const product = order.items[0];
+                    displayProductInfo({
+                        code: product.product_code,
+                        description: product.description
+                    });
+                }
+            }
+        } catch (error) {
+            console.error('Error loading order:', error);
+        }
+    }
+
+    async function loadProductDetails(productCode) {
+        try {
+            const response = await fetch(`/api/product-by-code?code=${productCode}`);
+            const data = await response.json();
+
+            if (data.success) {
+                displayProductInfo(data.product);
+            }
+        } catch (error) {
+            console.error('Error loading product:', error);
+        }
+    }
+
+    function displayProductInfo(product) {
+        const infoDiv = document.getElementById('product-info');
+        infoDiv.innerHTML = `
+                <div class="product-mini-card">
+                    <p><strong>Product:</strong> ${product.description}</p>
+                    <p><strong>Code:</strong> ${product.code}</p>
+                    <p><strong>Store:</strong> ${product.store_name || 'Unknown'}</p>
+                </div>
+            `;
+    }
+
+    async function submitReview(e) {
+        e.preventDefault();
+
+        const rating = document.getElementById('rating').value;
+        const comment = document.getElementById('comment').value;
+
+        if (rating === '0') {
+            alert('Please select a rating');
+            return;
+        }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const productCode = urlParams.get('product');
+
+        if (!productCode) {
+            alert('Product information is missing');
+            return;
+        }
+
+        const reviewData = {
+            product_code: productCode,
+            rating: parseInt(rating),
+            comment: comment
+        };
+
+        try {
+            const response = await fetch('/api/create-review', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(reviewData)
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                alert('Thank you for your review!');
+                window.location.href = 'client-dashboard.html';
+            } else {
+                alert(data.message || 'Failed to submit review');
+            }
+        } catch (error) {
+            console.error('Error submitting review:', error);
+            alert('An error occurred');
+        }
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Request Access - Handcraft Marketplace</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="logo-container">
+    <img src="../images/administrative/logo.jpg" alt="Handcraft Marketplace Logo" onerror="this.style.display='none'">
+    <h1>🎨 Handcraft Marketplace</h1>
+  </div>
+  <nav>
+    <ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="products.html">Products</a></li>
+      <li><a href="login.html">Login</a></li>
+      <li><a href="register.html">Register</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main>
+  <div class="form-container">
+    <h2>Request Access</h2>
+    <p class="form-subtitle">Fill out this form to request access to the Handcraft Marketplace platform</p>
+
+    <form id="access-request-form" class="form">
+      <h3>Personal Information</h3>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="first-name">First Name *</label>
+          <input type="text" id="first-name" required>
+        </div>
+
+        <div class="form-group">
+          <label for="last-name">Last Name *</label>
+          <input type="text" id="last-name" required>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="email">Email *</label>
+        <input type="email" id="email" required>
+      </div>
+
+      <div class="form-group">
+        <label for="phone">Phone Number</label>
+        <input type="tel" id="phone">
+      </div>
+
+      <h3>Request Type</h3>
+
+      <div class="form-group">
+        <label for="request-type">I want to: *</label>
+        <select id="request-type" required>
+          <option value="">Select an option</option>
+          <option value="seller">Become a Seller (Open a Store)</option>
+          <option value="employee">Work as an Employee in a Store</option>
+          <option value="partner">Become a Partner</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+
+      <div id="seller-details" style="display: none;">
+        <h4>Store Information</h4>
+
+        <div class="form-group">
+          <label for="store-name">Proposed Store Name</label>
+          <input type="text" id="store-name">
+        </div>
+
+        <div class="form-group">
+          <label for="store-description">Store Description</label>
+          <textarea id="store-description" rows="3"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="product-type">What type of products will you sell?</label>
+          <textarea id="product-type" rows="2"></textarea>
+        </div>
+      </div>
+
+      <div id="employee-details" style="display: none;">
+        <h4>Employment Information</h4>
+
+        <div class="form-group">
+          <label for="store-select">Select Store</label>
+          <select id="store-select">
+            <option value="">Select a store</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="position">Desired Position</label>
+          <input type="text" id="position" placeholder="e.g., Sales Assistant, Craftsman">
+        </div>
+
+        <div class="form-group">
+          <label for="experience">Relevant Experience</label>
+          <textarea id="experience" rows="3"></textarea>
+        </div>
+      </div>
+
+      <div id="other-details" style="display: none;">
+        <h4>Additional Information</h4>
+
+        <div class="form-group">
+          <label for="other-description">Please describe your request</label>
+          <textarea id="other-description" rows="4"></textarea>
+        </div>
+      </div>
+
+      <h3>Additional Information</h3>
+
+      <div class="form-group">
+        <label for="message">Message (Optional)</label>
+        <textarea id="message" rows="4" placeholder="Tell us more about why you want to join Handcraft Marketplace..."></textarea>
+      </div>
+
+      <div class="form-group checkbox">
+        <input type="checkbox" id="terms" required>
+        <label for="terms">I agree to the Terms and Conditions *</label>
+      </div>
+
+      <div class="form-group checkbox">
+        <input type="checkbox" id="newsletter">
+        <label for="newsletter">I'd like to receive updates about Handcraft Marketplace</label>
+      </div>
+
+      <button type="submit" class="btn-primary btn-full">Submit Request</button>
+    </form>
+
+    <div class="form-footer">
+      <p>Already have an account? <a href="login.html">Login here</a></p>
+      <p>Want to register directly? <a href="register.html">Register as client</a> or <a href="register-store.html">Open a store</a></p>
+    </div>
+  </div>
+</main>
+
+<div id="success-modal" class="modal" style="display: none;">
+  <div class="modal-content">
+    <span class="close">&times;</span>
+    <h2>Request Submitted!</h2>
+    <p>Thank you for your interest in Handcraft Marketplace.</p>
+    <p>We'll review your request and get back to you within 2-3 business days.</p>
+    <p>A confirmation email has been sent to your email address.</p>
+    <div style="margin-top: 2rem;">
+      <a href="index.html" class="btn-primary">Return to Home</a>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-content">
+    <div class="footer-section">
+      <h3>Handcraft Marketplace</h3>
+      <p>Join our community</p>
+    </div>
+    <div class="footer-section">
+      <h3>Quick Links</h3>
+      <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="products.html">Products</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>&copy; 2025 Handcraft Marketplace. All rights reserved.</p>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const requestType = document.getElementById('request-type');
+
+    // Load stores for employee selection
+    loadStores();
+
+    // Show/hide relevant sections based on request type
+    requestType.addEventListener('change', (e) => {
+      const type = e.target.value;
+
+      document.getElementById('seller-details').style.display = type === 'seller' ? 'block' : 'none';
+      document.getElementById('employee-details').style.display = type === 'employee' ? 'block' : 'none';
+      document.getElementById('other-details').style.display = type === 'other' ? 'block' : 'none';
+    });
+
+    // Form submission
+    document.getElementById('access-request-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      const firstName = document.getElementById('first-name').value;
+      const lastName = document.getElementById('last-name').value;
+      const email = document.getElementById('email').value;
+      const type = document.getElementById('request-type').value;
+
+      if (!type) {
+        alert('Please select a request type');
+        return;
+      }
+
+      // Validate email
+      const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+      if (!emailRegex.test(email)) {
+        alert('Please enter a valid email address');
+        return;
+      }
+
+      // Here you would send the request to the server
+      console.log('Access request:', {
+        firstName,
+        lastName,
+        email,
+        type,
+        phone: document.getElementById('phone').value,
+        message: document.getElementById('message').value
+      });
+
+      // Show success modal
+      document.getElementById('success-modal').style.display = 'block';
+
+      // Reset form
+      e.target.reset();
+      document.getElementById('seller-details').style.display = 'none';
+      document.getElementById('employee-details').style.display = 'none';
+      document.getElementById('other-details').style.display = 'none';
+    });
+  });
+
+  async function loadStores() {
+    try {
+      const response = await fetch('/api/stores');
+      const data = await response.json();
+
+      if (data.success) {
+        const select = document.getElementById('store-select');
+        select.innerHTML = '<option value="">Select a store</option>' +
+                data.stores.map(store =>
+                        `<option value="${store.store_id}">${store.name}</option>`
+                ).join('');
+      }
+    } catch (error) {
+      console.error('Error loading stores:', error);
+    }
+  }
+
+  // Close modal functionality
+  document.querySelectorAll('.modal .close').forEach(closeBtn => {
+    closeBtn.addEventListener('click', () => {
+      closeBtn.closest('.modal').style.display = 'none';
+    });
+  });
+
+  window.addEventListener('click', (event) => {
+    if (event.target.classList.contains('modal')) {
+      event.target.style.display = 'none';
+    }
+  });
+</script>
+</body>
+</html>

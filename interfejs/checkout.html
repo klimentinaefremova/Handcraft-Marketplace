@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Checkout - Handcraft Marketplace</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="logo-container">
+    <img src="../images/administrative/logo.jpg" alt="Handcraft Marketplace Logo" onerror="this.style.display='none'">
+    <h1>🎨 Handcraft Marketplace</h1>
+  </div>
+  <nav>
+    <ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="products.html">Products</a></li>
+      <li><a href="#" id="dashboard-link">Dashboard</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main>
+  <div class="checkout-header">
+    <h2>Checkout</h2>
+    <p>Complete your purchase</p>
+  </div>
+
+  <div class="checkout-container">
+    <div class="checkout-progress">
+      <div class="progress-step active">
+        <span class="step-number">1</span>
+        <span class="step-label">Cart</span>
+      </div>
+      <div class="progress-step">
+        <span class="step-number">2</span>
+        <span class="step-label">Delivery</span>
+      </div>
+      <div class="progress-step">
+        <span class="step-number">3</span>
+        <span class="step-label">Payment</span>
+      </div>
+      <div class="progress-step">
+        <span class="step-number">4</span>
+        <span class="step-label">Confirm</span>
+      </div>
+    </div>
+
+    <div id="step-1" class="checkout-step active">
+      <h3>Review Your Cart</h3>
+      <div id="cart-items" class="cart-items">
+        <div class="loading">Loading cart...</div>
+      </div>
+
+      <div class="cart-summary">
+        <div class="summary-row">
+          <span>Subtotal:</span>
+          <span id="subtotal">$0.00</span>
+        </div>
+        <div class="summary-row">
+          <span>Shipping:</span>
+          <span id="shipping">$0.00</span>
+        </div>
+        <div class="summary-row total">
+          <span>Total:</span>
+          <span id="total">$0.00</span>
+        </div>
+      </div>
+
+      <div class="checkout-actions">
+        <button id="continue-to-delivery" class="btn-primary">Continue to Delivery</button>
+        <a href="products.html" class="btn-secondary">Continue Shopping</a>
+      </div>
+    </div>
+
+    <div id="step-2" class="checkout-step" style="display: none;">
+      <h3>Delivery Address</h3>
+
+      <div id="saved-addresses" class="address-list">
+        <div class="loading">Loading addresses...</div>
+      </div>
+
+      <div class="form-group">
+        <label>
+          <input type="checkbox" id="use-new-address"> Use a different address
+        </label>
+      </div>
+
+      <div id="new-address-form" style="display: none;">
+        <h4>New Delivery Address</h4>
+        <form class="form">
+          <div class="form-group">
+            <label for="address">Street Address *</label>
+            <input type="text" id="address" required>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="city">City *</label>
+              <input type="text" id="city" required>
+            </div>
+            <div class="form-group">
+              <label for="postcode">Postcode *</label>
+              <input type="text" id="postcode" required>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="country">Country *</label>
+            <input type="text" id="country" required>
+          </div>
+
+          <div class="form-group checkbox">
+            <input type="checkbox" id="save-address">
+            <label for="save-address">Save this address for future orders</label>
+          </div>
+        </form>
+      </div>
+
+      <div class="checkout-actions">
+        <button id="back-to-cart" class="btn-secondary">Back to Cart</button>
+        <button id="continue-to-payment" class="btn-primary">Continue to Payment</button>
+      </div>
+    </div>
+
+    <div id="step-3" class="checkout-step" style="display: none;">
+      <h3>Payment Method</h3>
+
+      <div class="payment-methods">
+        <div class="payment-method">
+          <label>
+            <input type="radio" name="payment" value="credit" checked>
+            <div class="payment-details">
+              <strong>Credit Card</strong>
+              <p>Pay securely with your credit card</p>
+            </div>
+          </label>
+        </div>
+
+        <div class="payment-method">
+          <label>
+            <input type="radio" name="payment" value="paypal">
+            <div class="payment-details">
+              <strong>PayPal</strong>
+              <p>Pay with your PayPal account</p>
+            </div>
+          </label>
+        </div>
+
+        <div class="payment-method">
+          <label>
+            <input type="radio" name="payment" value="cash">
+            <div class="payment-details">
+              <strong>Cash on Delivery</strong>
+              <p>Pay when you receive your order</p>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div id="credit-card-form" class="credit-card-form">
+        <h4>Credit Card Details</h4>
+        <form class="form">
+          <div class="form-group">
+            <label for="card-number">Card Number</label>
+            <input type="text" id="card-number" placeholder="**** **** **** ****">
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="card-expiry">Expiry Date</label>
+              <input type="text" id="card-expiry" placeholder="MM/YY">
+            </div>
+            <div class="form-group">
+              <label for="card-cvv">CVV</label>
+              <input type="text" id="card-cvv" placeholder="***">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="card-name">Name on Card</label>
+            <input type="text" id="card-name">
+          </div>
+        </form>
+      </div>
+
+      <div class="checkout-actions">
+        <button id="back-to-delivery" class="btn-secondary">Back to Delivery</button>
+        <button id="continue-to-confirm" class="btn-primary">Review Order</button>
+      </div>
+    </div>
+
+    <div id="step-4" class="checkout-step" style="display: none;">
+      <h3>Order Confirmation</h3>
+
+      <div class="order-summary">
+        <h4>Order Summary</h4>
+        <div id="confirm-items"></div>
+
+        <div class="summary-details">
+          <p><strong>Delivery Address:</strong> <span id="confirm-address"></span></p>
+          <p><strong>Payment Method:</strong> <span id="confirm-payment"></span></p>
+        </div>
+
+        <div class="summary-row total">
+          <span>Total to Pay:</span>
+          <span id="confirm-total">$0.00</span>
+        </div>
+      </div>
+
+      <div class="terms-checkbox">
+        <label>
+          <input type="checkbox" id="accept-terms">
+          I agree to the Terms and Conditions and Privacy Policy
+        </label>
+      </div>
+
+      <div class="checkout-actions">
+        <button id="back-to-payment" class="btn-secondary">Back to Payment</button>
+        <button id="place-order" class="btn-primary" disabled>Place Order</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="order-success-modal" class="modal" style="display: none;">
+  <div class="modal-content">
+    <span class="close">&times;</span>
+    <h2>Order Placed Successfully!</h2>
+    <p>Your order has been placed. Order number: <strong id="order-number"></strong></p>
+    <p>You will receive a confirmation email shortly.</p>
+    <div style="display: flex; gap: 1rem; justify-content: center; margin-top: 2rem;">
+      <a href="products.html" class="btn-primary">Continue Shopping</a>
+      <a href="client-dashboard.html" class="btn-secondary">View Orders</a>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-content">
+    <div class="footer-section">
+      <h3>Handcraft Marketplace</h3>
+      <p>Secure checkout</p>
+    </div>
+    <div class="footer-section">
+      <h3>Quick Links</h3>
+      <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="products.html">Products</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>&copy; 2025 Handcraft Marketplace. All rights reserved.</p>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', async () => {
+    const auth = await checkAuth();
+
+    if (!auth.success) {
+      window.location.href = 'login.html';
+      return;
+    }
+
+    if (auth.user.userType !== 'client') {
+      alert('Only clients can place orders');
+      window.location.href = 'index.html';
+      return;
+    }
+
+    let cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
+    let selectedAddress = null;
+    let paymentMethod = 'credit';
+
+    if (cart.length === 0) {
+      window.location.href = 'products.html';
+      return;
+    }
+
+    // Display cart items
+    displayCart();
+
+    // Load saved addresses
+    loadAddresses();
+
+    // Event listeners for navigation
+    document.getElementById('continue-to-delivery').addEventListener('click', goToDelivery);
+    document.getElementById('back-to-cart').addEventListener('click', backToCart);
+    document.getElementById('continue-to-payment').addEventListener('click', goToPayment);
+    document.getElementById('back-to-delivery').addEventListener('click', backToDelivery);
+    document.getElementById('continue-to-confirm').addEventListener('click', goToConfirm);
+    document.getElementById('back-to-payment').addEventListener('click', backToPayment);
+    document.getElementById('place-order').addEventListener('click', placeOrder);
+
+    // Payment method toggle
+    document.querySelectorAll('input[name="payment"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        paymentMethod = e.target.value;
+        document.getElementById('credit-card-form').style.display =
+                paymentMethod === 'credit' ? 'block' : 'none';
+      });
+    });
+
+    // New address toggle
+    document.getElementById('use-new-address').addEventListener('change', (e) => {
+      document.getElementById('new-address-form').style.display =
+              e.target.checked ? 'block' : 'none';
+    });
+
+    // Terms checkbox
+    document.getElementById('accept-terms').addEventListener('change', (e) => {
+      document.getElementById('place-order').disabled = !e.target.checked;
+    });
+
+    function displayCart() {
+      const cartContainer = document.getElementById('cart-items');
+      let subtotal = 0;
+
+      if (cart.length === 0) {
+        cartContainer.innerHTML = '<p>Your cart is empty</p>';
+      } else {
+        cartContainer.innerHTML = cart.map((item, index) => {
+          const itemTotal = item.price * item.quantity;
+          subtotal += itemTotal;
+          return `
+                            <div class="cart-item">
+                                <div class="cart-item-image">
+                                    <img src="${item.image || '../images/product-placeholder.jpg'}" alt="${item.description}"
+                                         onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2280%22 height=%2280%22 viewBox=%220 0 80 80%22><rect width=%2280%22 height=%2280%22 fill=%22%23f0f0f0%22/></svg>'">
+                                </div>
+                                <div class="cart-item-details">
+                                    <h4>${item.description}</h4>
+                                    <p>Store: ${item.storeName}</p>
+                                    <p>Price: $${item.price.toFixed(2)}</p>
+                                </div>
+                                <div class="cart-item-quantity">
+                                    <label>Qty:</label>
+                                    <input type="number" min="1" value="${item.quantity}" onchange="updateQuantity(${index}, this.value)">
+                                </div>
+                                <div class="cart-item-total">
+                                    $${itemTotal.toFixed(2)}
+                                </div>
+                                <button class="remove-item" onclick="removeItem(${index})">&times;</button>
+                            </div>
+                        `;
+        }).join('');
+      }
+
+      const shipping = subtotal > 0 ? 5.00 : 0;
+      const total = subtotal + shipping;
+
+      document.getElementById('subtotal').textContent = `$${subtotal.toFixed(2)}`;
+      document.getElementById('shipping').textContent = `$${shipping.toFixed(2)}`;
+      document.getElementById('total').textContent = `$${total.toFixed(2)}`;
+      document.getElementById('confirm-total').textContent = `$${total.toFixed(2)}`;
+    }
+
+    async function loadAddresses() {
+      // This would need a separate API endpoint
+      setTimeout(() => {
+        const addressesDiv = document.getElementById('saved-addresses');
+        addressesDiv.innerHTML = `
+                        <div class="address-option">
+                            <label>
+                                <input type="radio" name="address" value="default" checked>
+                                <div class="address-details">
+                                    <strong>Default Address</strong>
+                                    <p>st. Center num.10, Skopje 1000, North Macedonia</p>
+                                </div>
+                            </label>
+                        </div>
+                    `;
+      }, 500);
+    }
+
+    function goToDelivery() {
+      document.getElementById('step-1').classList.remove('active');
+      document.getElementById('step-1').style.display = 'none';
+      document.getElementById('step-2').style.display = 'block';
+      document.getElementById('step-2').classList.add('active');
+
+      document.querySelectorAll('.progress-step')[0].classList.remove('active');
+      document.querySelectorAll('.progress-step')[1].classList.add('active');
+    }
+
+    function backToCart() {
+      document.getElementById('step-2').classList.remove('active');
+      document.getElementById('step-2').style.display = 'none';
+      document.getElementById('step-1').style.display = 'block';
+      document.getElementById('step-1').classList.add('active');
+
+      document.querySelectorAll('.progress-step')[1].classList.remove('active');
+      document.querySelectorAll('.progress-step')[0].classList.add('active');
+    }
+
+    function goToPayment() {
+      // Get selected address
+      const addressRadio = document.querySelector('input[name="address"]:checked');
+      if (!addressRadio) {
+        alert('Please select a delivery address');
+        return;
+      }
+
+      selectedAddress = 'Selected Address'; // In real app, get actual address
+
+      document.getElementById('step-2').classList.remove('active');
+      document.getElementById('step-2').style.display = 'none';
+      document.getElementById('step-3').style.display = 'block';
+      document.getElementById('step-3').classList.add('active');
+
+      document.querySelectorAll('.progress-step')[1].classList.remove('active');
+      document.querySelectorAll('.progress-step')[2].classList.add('active');
+    }
+
+    function backToDelivery() {
+      document.getElementById('step-3').classList.remove('active');
+      document.getElementById('step-3').style.display = 'none';
+      document.getElementById('step-2').style.display = 'block';
+      document.getElementById('step-2').classList.add('active');
+
+      document.querySelectorAll('.progress-step')[2].classList.remove('active');
+      document.querySelectorAll('.progress-step')[1].classList.add('active');
+    }
+
+    function goToConfirm() {
+      // Validate payment info
+      if (paymentMethod === 'credit') {
+        const cardNumber = document.getElementById('card-number').value;
+        if (!cardNumber) {
+          alert('Please enter your card details');
+          return;
+        }
+      }
+
+      // Display confirmation
+      const confirmItems = document.getElementById('confirm-items');
+      confirmItems.innerHTML = cart.map(item => `
+                    <p>${item.quantity}x ${item.description.substring(0, 30)} - $${(item.price * item.quantity).toFixed(2)}</p>
+                `).join('');
+
+      document.getElementById('confirm-address').textContent = selectedAddress;
+      document.getElementById('confirm-payment').textContent =
+              paymentMethod === 'credit' ? 'Credit Card' :
+                      paymentMethod === 'paypal' ? 'PayPal' : 'Cash on Delivery';
+
+      document.getElementById('step-3').classList.remove('active');
+      document.getElementById('step-3').style.display = 'none';
+      document.getElementById('step-4').style.display = 'block';
+      document.getElementById('step-4').classList.add('active');
+
+      document.querySelectorAll('.progress-step')[2].classList.remove('active');
+      document.querySelectorAll('.progress-step')[3].classList.add('active');
+    }
+
+    function backToPayment() {
+      document.getElementById('step-4').classList.remove('active');
+      document.getElementById('step-4').style.display = 'none';
+      document.getElementById('step-3').style.display = 'block';
+      document.getElementById('step-3').classList.add('active');
+
+      document.querySelectorAll('.progress-step')[3].classList.remove('active');
+      document.querySelectorAll('.progress-step')[2].classList.add('active');
+    }
+
+    async function placeOrder() {
+      // Create order
+      const orderData = {
+        storeId: cart[0].storeId, // Assuming all items from same store for simplicity
+        items: cart.map(item => ({
+          productCode: item.code,
+          quantity: item.quantity,
+          price: item.price
+        })),
+        paymentMethod: paymentMethod === 'credit' ? 'credit card, **** **** **** 6750' : paymentMethod,
+        deliveryAddress: selectedAddress,
+        discount: 0
+      };
+
+      try {
+        const response = await fetch('/api/create-order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(orderData)
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          // Clear cart
+          sessionStorage.removeItem('cart');
+
+          document.getElementById('order-number').textContent = data.orderId;
+          document.getElementById('order-success-modal').style.display = 'block';
+        } else {
+          alert(data.message || 'Failed to place order');
+        }
+      } catch (error) {
+        console.error('Error placing order:', error);
+        alert('An error occurred while placing your order');
+      }
+    }
+
+    window.updateQuantity = (index, quantity) => {
+      quantity = parseInt(quantity);
+      if (quantity < 1) {
+        quantity = 1;
+      }
+      cart[index].quantity = quantity;
+      sessionStorage.setItem('cart', JSON.stringify(cart));
+      displayCart();
+    };
+
+    window.removeItem = (index) => {
+      cart.splice(index, 1);
+      sessionStorage.setItem('cart', JSON.stringify(cart));
+      displayCart();
+
+      if (cart.length === 0) {
+        setTimeout(() => {
+          window.location.href = 'products.html';
+        }, 1000);
+      }
+    };
+  });
+
+  // Close modal functionality
+  document.querySelectorAll('.modal .close').forEach(closeBtn => {
+    closeBtn.addEventListener('click', () => {
+      closeBtn.closest('.modal').style.display = 'none';
+    });
+  });
+
+  window.addEventListener('click', (event) => {
+    if (event.target.classList.contains('modal')) {
+      event.target.style.display = 'none';
+    }
+  });
+</script>
+</body>
+</html>

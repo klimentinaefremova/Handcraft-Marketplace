@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard - Handcraft Marketplace</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="logo-container">
+    <img src="../images/administrative/logo.jpg" alt="Handcraft Marketplace Logo" onerror="this.style.display='none'">
+    <h1>🎨 Handcraft Marketplace</h1>
+  </div>
+  <nav>
+    <ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="products.html">Products</a></li>
+      <li><a href="#" id="dashboard-link" class="active">Dashboard</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main>
+  <div class="dashboard-header">
+    <h2>Welcome, <span id="user-name">User</span>!</h2>
+    <p>Your personalized dashboard</p>
+  </div>
+
+  <div class="dashboard-stats">
+    <div class="stat-card pink">
+      <h3>Account Type</h3>
+      <div class="stat-number" id="user-type">Loading...</div>
+    </div>
+    <div class="stat-card blue">
+      <h3>Member Since</h3>
+      <div class="stat-number" id="member-since">Loading...</div>
+    </div>
+  </div>
+
+  <div class="dashboard-section">
+    <h3>Quick Actions</h3>
+    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+      <a href="products.html" class="btn-primary">Browse Products</a>
+      <a href="#" id="view-profile" class="btn-secondary">View Profile</a>
+    </div>
+  </div>
+
+  <div class="dashboard-section">
+    <h3>Recent Activity</h3>
+    <div id="recent-activity">
+      <div class="loading">Loading activity...</div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="footer-content">
+    <div class="footer-section">
+      <h3>Handcraft Marketplace</h3>
+      <p>Connecting artisans with buyers worldwide</p>
+    </div>
+    <div class="footer-section">
+      <h3>Quick Links</h3>
+      <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="products.html">Products</a></li>
+      </ul>
+    </div>
+    <div class="footer-section">
+      <h3>Contact</h3>
+      <p>Email: support@handcraft.com</p>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>&copy; 2025 Handcraft Marketplace. All rights reserved.</p>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', async () => {
+    const user = await loadUserData();
+    if (!user) return;
+
+    // Redirect based on user type
+    if (user.userType === 'client') {
+      window.location.href = 'client-dashboard.html';
+    } else if (user.userType === 'store_owner') {
+      window.location.href = 'store-owner.html';
+    } else if (user.userType === 'store_employee') {
+      window.location.href = 'store-employee.html';
+    } else if (user.userType === 'admin') {
+      window.location.href = 'admin.html';
+    }
+
+    // Display user info
+    document.getElementById('user-name').textContent =
+            user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username || 'User';
+    document.getElementById('user-type').textContent =
+            user.userType ? user.userType.replace('_', ' ') : 'User';
+
+    // Mock member since date
+    document.getElementById('member-since').textContent = '2025';
+
+    // Load recent activity
+    const activityDiv = document.getElementById('recent-activity');
+    activityDiv.innerHTML = '<p>No recent activity to display.</p>';
+  });
+</script>
+</body>
+</html>

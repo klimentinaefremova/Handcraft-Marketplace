@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Product Details - Handcraft Marketplace</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+    <div class="logo-container">
+        <img src="../images/administrative/logo.jpg" alt="Handcraft Marketplace Logo" onerror="this.style.display='none'">
+        <h1>🎨 Handcraft Marketplace</h1>
+    </div>
+    <nav>
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="products.html">Products</a></li>
+            <li><a href="login.html">Login</a></li>
+            <li><a href="register.html">Register</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main>
+    <div class="breadcrumb">
+        <a href="index.html">Home</a> &gt;
+        <a href="products.html">Products</a> &gt;
+        <span id="product-category">Loading...</span>
+    </div>
+
+    <div id="product-detail-container" class="product-detail">
+        <div class="loading">Loading product details...</div>
+    </div>
+
+    <div id="reviews-section" class="dashboard-section" style="margin-top: 2rem; display: none;">
+        <h3>Customer Reviews</h3>
+        <div id="reviews-list" class="reviews-list">
+            <div class="loading">Loading reviews...</div>
+        </div>
+    </div>
+
+    <div id="related-products" class="related-products" style="margin-top: 2rem; display: none;">
+        <h3>Related Products</h3>
+        <div class="product-grid" id="related-products-grid">
+            <div class="loading">Loading related products...</div>
+        </div>
+    </div>
+</main>
+
+<div id="login-prompt-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2>Login Required</h2>
+        <p>Please login or register to add items to your cart.</p>
+        <div style="display: flex; gap: 1rem; justify-content: center; margin-top: 2rem;">
+            <a href="login.html" class="btn-primary">Login</a>
+            <a href="register.html" class="btn-secondary">Register</a>
+        </div>
+    </div>
+</div>
+
+<footer>
+    <div class="footer-content">
+        <div class="footer-section">
+            <h3>Handcraft Marketplace</h3>
+            <p>Connecting artisans with buyers worldwide</p>
+        </div>
+        <div class="footer-section">
+            <h3>Quick Links</h3>
+            <ul>
+                <li><a href="index.html">Home</a></li>
+                <li><a href="products.html">Products</a></li>
+            </ul>
+        </div>
+        <div class="footer-section">
+            <h3>Contact</h3>
+            <p>Email: support@handcraft.com</p>
+        </div>
+    </div>
+    <div class="footer-bottom">
+        <p>&copy; 2025 Handcraft Marketplace. All rights reserved.</p>
+    </div>
+</footer>
+
+<script src="script.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const productCode = urlParams.get('code') || urlParams.get('id');
+
+        if (!productCode) {
+            window.location.href = 'products.html';
+            return;
+        }
+
+        loadProductDetails(productCode);
+        loadProductReviews(productCode);
+        loadRelatedProducts(productCode);
+    });
+
+    async function loadProductDetails(productCode) {
+        try {
+            const response = await fetch(`/api/product-by-code?code=${productCode}`);
+            const data = await response.json();
+
+            if (data.success) {
+                const product = data.product;
+                document.getElementById('product-category').textContent = product.category_name || 'Product';
+
+                const container = document.getElementById('product-detail-container');
+
+                // Get images
+                const images = product.images || [];
+                const mainImage = images.length > 0 ? images[0].image : '../images/product-placeholder.jpg';
+
+                // Get colors
+                const colors = product.colors || [];
+
+                // Calculate total reviews and average rating
+                const avgRating = product.avg_rating || 0;
+                const totalReviews = product.review_count || 0;
+
+                container.innerHTML = `
+                        <div class="product-gallery">
+                            <div class="main-image">
+                                <img src="${mainImage}" alt="${product.description}"
+                                     onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22400%22 viewBox=%220 0 400 400%22><rect width=%22400%22 height=%22400%22 fill=%22%23f0f0f0%22/><text x=%22150%22 y=%22200%22 font-family=%22Arial%22 font-size=%2224%22 fill=%22%23999%22>No Image</text></svg>'">
+                            </div>
+                            ${images.length > 1 ? `
+                                <div class="thumbnail-grid">
+                                    ${images.map(img => `
+                                        <img src="${img.image}" class="thumbnail" onclick="updateMainImage(this.src)"
+                                             onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2280%22 height=%2280%22 viewBox=%220 0 80 80%22><rect width=%2280%22 height=%2280%22 fill=%22%23f0f0f0%22/></svg>'">
+                                    `).join('')}
+                                </div>
+                            ` : ''}
+                        </div>
+
+                        <div class="product-info">
+                            <h1 class="product-title">${product.description}</h1>
+
+                            <div class="product-meta">
+                                <span class="product-store">Sold by: ${product.store_name || 'Unknown Store'}</span>
+                                <span class="product-code">Code: ${product.code}</span>
+                            </div>
+
+                            <div class="product-rating">
+                                <span class="rating-stars">${'★'.repeat(Math.floor(avgRating))}${'☆'.repeat(5 - Math.floor(avgRating))}</span>
+                                <span class="rating-count">(${totalReviews} reviews)</span>
+                            </div>
+
+                            <div class="product-price-large">$${parseFloat(product.price).toFixed(2)}</div>
+
+                            <div class="product-availability-large">
+                                ${product.availability > 0 ?
+                    `<span class="in-stock">✓ In Stock (${product.availability} available)</span>` :
+                    '<span class="out-of-stock">✗ Out of Stock</span>'}
+                            </div>
+
+                            <div class="product-details-grid">
+                                <div class="detail-item">
+                                    <strong>Weight:</strong> ${product.weight} kg
+                                </div>
+                                <div class="detail-item">
+                                    <strong>Dimensions:</strong> ${product.dimensions || 'N/A'}
+                                </div>
+                                <div class="detail-item">
+                                    <strong>Production Time:</strong> ${product.production_time || '1'} day(s)
+                                </div>
+                                <div class="detail-item">
+                                    <strong>Category:</strong> ${product.category_name || 'General'}
+                                </div>
+                            </div>
+
+                            ${colors.length > 0 ? `
+                                <div class="product-colors">
+                                    <strong>Available Colors:</strong>
+                                    <div class="color-list">
+                                        ${colors.map(c => `
+                                            <span class="color-tag" style="background-color: ${c.color.toLowerCase()}; color: white; padding: 0.25rem 0.5rem; border-radius: 3px; margin-right: 0.5rem; display: inline-block; margin-bottom: 0.5rem;">
+                                                ${c.color}
+                                            </span>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+
+                            <div class="product-actions">
+                                <div class="quantity-selector">
+                                    <label for="quantity">Quantity:</label>
+                                    <input type="number" id="quantity" min="1" max="${product.availability}" value="1" ${product.availability === 0 ? 'disabled' : ''}>
+                                </div>
+
+                                <button id="add-to-cart" class="btn-primary btn-large" ${product.availability === 0 ? 'disabled' : ''}>
+                                    Add to Cart
+                                </button>
+
+                                <button id="buy-now" class="btn-secondary btn-large" ${product.availability === 0 ? 'disabled' : ''}>
+                                    Buy Now
+                                </button>
+                            </div>
+
+                            <div class="product-description">
+                                <h3>Description</h3>
+                                <p>${product.description}</p>
+                            </div>
+
+                            <div class="store-info">
+                                <h3>Store Information</h3>
+                                <p><strong>Store:</strong> ${product.store_name || 'Unknown Store'}</p>
+                                <p><strong>Store Email:</strong> ${product.store_email || 'N/A'}</p>
+                                <p><strong>Store Rating:</strong> ${product.store_rating || '0.0'}/5.0</p>
+                                <a href="#" class="btn-small" onclick="viewStore('${product.store_id}')">Visit Store</a>
+                            </div>
+                        </div>
+                    `;
+
+                // Add event listeners
+                document.getElementById('add-to-cart')?.addEventListener('click', () => addToCart(product));
+                document.getElementById('buy-now')?.addEventListener('click', () => buyNow(product));
+
+                document.getElementById('reviews-section').style.display = 'block';
+                document.getElementById('related-products').style.display = 'block';
+            } else {
+                document.getElementById('product-detail-container').innerHTML = '<p class="error">Product not found</p>';
+            }
+        } catch (error) {
+            console.error('Error loading product:', error);
+            document.getElementById('product-detail-container').innerHTML = '<p class="error">Error loading product details</p>';
+        }
+    }
+
+    async function loadProductReviews(productCode) {
+        // This would need a separate API endpoint
+        setTimeout(() => {
+            document.getElementById('reviews-list').innerHTML = `
+                    <div class="review-card">
+                        <div class="review-header">
+                            <span class="review-author">John Doe</span>
+                            <span class="review-rating">★★★★★</span>
+                            <span class="review-date">${new Date().toLocaleDateString()}</span>
+                        </div>
+                        <p class="review-comment">Excellent product! Very happy with my purchase.</p>
+                    </div>
+                    <div class="review-card">
+                        <div class="review-header">
+                            <span class="review-author">Jane Smith</span>
+                            <span class="review-rating">★★★★☆</span>
+                            <span class="review-date">${new Date(Date.now() - 86400000).toLocaleDateString()}</span>
+                        </div>
+                        <p class="review-comment">Good quality, fast shipping. Would recommend.</p>
+                    </div>
+                `;
+        }, 500);
+    }
+
+    async function loadRelatedProducts(productCode) {
+        try {
+            const response = await fetch('/api/products');
+            const data = await response.json();
+
+            if (data.success) {
+                // Get random products excluding current one
+                const otherProducts = (data.products || [])
+                    .filter(p => p.code !== productCode)
+                    .slice(0, 4);
+
+                const grid = document.getElementById('related-products-grid');
+
+                if (otherProducts.length > 0) {
+                    grid.innerHTML = otherProducts.map(product => `
+                            <div class="product-card">
+                                <div class="product-image">
+                                    <img src="../images/product-placeholder.jpg" alt="${product.description.substring(0, 30)}"
+                                         onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 fill=%22%23f0f0f0%22/></svg>'">
+                                </div>
+                                <div class="product-info">
+                                    <h3>${product.description.substring(0, 30)}${product.description.length > 30 ? '...' : ''}</h3>
+                                    <p class="product-price">$${parseFloat(product.price).toFixed(2)}</p>
+                                    <a href="product-detail.html?code=${product.code}" class="btn-small">View</a>
+                                </div>
+                            </div>
+                        `).join('');
+                } else {
+                    grid.innerHTML = '<p>No related products found</p>';
+                }
+            }
+        } catch (error) {
+            console.error('Error loading related products:', error);
+        }
+    }
+
+    window.updateMainImage = (src) => {
+        document.querySelector('.main-image img').src = src;
+    };
+
+    async function addToCart(product) {
+        const auth = await checkAuth();
+
+        if (!auth.success) {
+            document.getElementById('login-prompt-modal').style.display = 'block';
+            return;
+        }
+
+        if (auth.user.userType !== 'client') {
+            alert('Only clients can purchase products');
+            return;
+        }
+
+        const quantity = parseInt(document.getElementById('quantity').value);
+
+        // Get existing cart from session storage
+        let cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
+
+        // Check if product already in cart
+        const existingItem = cart.find(item => item.code === product.code);
+
+        if (existingItem) {
+            existingItem.quantity += quantity;
+        } else {
+            cart.push({
+                code: product.code,
+                description: product.description,
+                price: product.price,
+                quantity: quantity,
+                storeId: product.store_id,
+                storeName: product.store_name,
+                image: product.images && product.images.length > 0 ? product.images[0].image : null
+            });
+        }
+
+        sessionStorage.setItem('cart', JSON.stringify(cart));
+
+        alert(`Added ${quantity} item(s) to cart!`);
+    }
+
+    async function buyNow(product) {
+        const auth = await checkAuth();
+
+        if (!auth.success) {
+            document.getElementById('login-prompt-modal').style.display = 'block';
+            return;
+        }
+
+        if (auth.user.userType !== 'client') {
+            alert('Only clients can purchase products');
+            return;
+        }
+
+        const quantity = parseInt(document.getElementById('quantity').value);
+
+        // Create a single-item cart and go to checkout
+        const cart = [{
+            code: product.code,
+            description: product.description,
+            price: product.price,
+            quantity: quantity,
+            storeId: product.store_id,
+            storeName: product.store_name
+        }];
+
+        sessionStorage.setItem('cart', JSON.stringify(cart));
+        window.location.href = 'checkout.html';
+    }
+
+    window.viewStore = (storeId) => {
+        alert(`View store ${storeId} - Feature coming soon`);
+    };
+
+    // Close modal functionality
+    document.querySelectorAll('.modal .close').forEach(closeBtn => {
+        closeBtn.addEventListener('click', () => {
+            closeBtn.closest('.modal').style.display = 'none';
+        });
+    });
+
+    window.addEventListener('click', (event) => {
+        if (event.target.classList.contains('modal')) {
+            event.target.style.display = 'none';
+        }
+    });
+</script>
+</body>
+</html>

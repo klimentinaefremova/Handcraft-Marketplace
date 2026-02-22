@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - Handcraft Marketplace</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="logo-container">
+    <img src="../images/administrative/logo.jpg" alt="Handcraft Marketplace Logo" onerror="this.style.display='none'">
+    <h1>🎨 Handcraft Marketplace</h1>
+  </div>
+  <nav>
+    <ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="products.html">Products</a></li>
+      <li><a href="login.html" class="active">Login</a></li>
+      <li><a href="register.html">Register</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main>
+  <div class="form-container">
+    <h2>Login to Your Account</h2>
+    <p class="form-subtitle">Welcome back! Please enter your credentials</p>
+
+    <form id="login-form" class="form">
+      <div class="form-group">
+        <label for="email">Email or Username</label>
+        <input type="text" id="email" name="email" required>
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required>
+      </div>
+
+      <div class="form-group">
+        <button type="submit" class="btn-primary btn-full">Login</button>
+      </div>
+    </form>
+
+    <div class="form-footer">
+      <p>Don't have an account? <a href="register.html">Register as client</a></p>
+      <p>Want to sell? <a href="register-store.html">Register your store</a></p>
+    </div>
+  </div>
+</main>
+
+<div id="2fa-modal" class="modal" style="display: none;">
+  <div class="modal-content">
+    <span class="close">&times;</span>
+    <h2>Two-Factor Authentication</h2>
+    <p>We've sent a verification code to <span id="2fa-email"></span></p>
+    <p class="code-expiry">Code expires in 30 seconds</p>
+    <div class="form-group">
+      <label for="2fa-code">Enter 6-digit code:</label>
+      <input type="text" id="2fa-code" maxlength="6" placeholder="000000">
+    </div>
+    <div class="form-group">
+      <button id="verify-2fa-btn" class="btn-primary">Verify</button>
+    </div>
+    <p class="resend-link">Didn't receive code? <a href="#" id="resend-2fa">Resend</a></p>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-content">
+    <div class="footer-section">
+      <h3>Handcraft Marketplace</h3>
+      <p>Connecting artisans with buyers worldwide</p>
+    </div>
+    <div class="footer-section">
+      <h3>Quick Links</h3>
+      <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="products.html">Products</a></li>
+        <li><a href="login.html">Login</a></li>
+        <li><a href="register.html">Register</a></li>
+      </ul>
+    </div>
+    <div class="footer-section">
+      <h3>For Sellers</h3>
+      <ul>
+        <li><a href="register-store.html">Open a Store</a></li>
+      </ul>
+    </div>
+    <div class="footer-section">
+      <h3>Contact</h3>
+      <p>Email: support@handcraft.com</p>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>&copy; 2025 Handcraft Marketplace. All rights reserved.</p>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const loginForm = document.getElementById('login-form');
+    const modal = document.getElementById('2fa-modal');
+    const closeBtn = document.querySelector('.close');
+    const verifyBtn = document.getElementById('verify-2fa-btn');
+    const resendLink = document.getElementById('resend-2fa');
+    const twoFACode = document.getElementById('2fa-code');
+    let currentEmail = '';
+
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const formData = {
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value
+      };
+
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          if (data.requires2FA) {
+            currentEmail = data.email;
+            document.getElementById('2fa-email').textContent = currentEmail;
+            modal.style.display = 'block';
+
+            if (data.developmentCode) {
+              console.log('Development 2FA code:', data.developmentCode);
+            }
+          } else {
+            window.location.href = data.redirectTo || 'dashboard.html';
+          }
+        } else {
+          alert(data.message || 'Login failed');
+        }
+      } catch (error) {
+        console.error('Login error:', error);
+        alert('An error occurred during login');
+      }
+    });
+
+    verifyBtn.addEventListener('click', async () => {
+      const code = twoFACode.value;
+
+      if (!code || code.length !== 6) {
+        alert('Please enter a valid 6-digit code');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/verify-2fa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: currentEmail,
+            code: code
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          if (data.requiresPasswordChange) {
+            window.location.href = 'change-password.html?forced=true';
+          } else {
+            window.location.href = data.redirectTo || 'dashboard.html';
+          }
+        } else {
+          alert(data.message || 'Verification failed');
+        }
+      } catch (error) {
+        console.error('2FA verification error:', error);
+        alert('An error occurred during verification');
+      }
+    });
+
+    resendLink.addEventListener('click', async (e) => {
+      e.preventDefault();
+
+      try {
+        const response = await fetch('/api/resend-2fa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: currentEmail })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          alert('New verification code sent!');
+          if (data.developmentCode) {
+            console.log('New development code:', data.developmentCode);
+          }
+        } else {
+          alert(data.message || 'Failed to resend code');
+        }
+      } catch (error) {
+        console.error('Resend error:', error);
+        alert('An error occurred');
+      }
+    });
+
+    closeBtn.addEventListener('click', () => {
+      modal.style.display = 'none';
+    });
+
+    window.addEventListener('click', (event) => {
+      if (event.target === modal) {
+        modal.style.display = 'none';
+      }
+    });
+  });
+</script>
+</body>
+</html>

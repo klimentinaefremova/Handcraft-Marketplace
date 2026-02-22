@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard - Handcraft Marketplace</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="logo-container">
+    <img src="../images/administrative/logo.jpg" alt="Handcraft Marketplace Logo" onerror="this.style.display='none'">
+    <h1>🎨 Handcraft Marketplace</h1>
+  </div>
+  <nav>
+    <ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="products.html">Products</a></li>
+      <li><a href="#" id="dashboard-link" class="active">Admin</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main>
+  <div class="dashboard-header">
+    <h2>Admin Dashboard</h2>
+    <p>Welcome, <span id="admin-name">Administrator</span>!</p>
+  </div>
+
+  <div class="dashboard-stats">
+    <div class="stat-card pink">
+      <h3>Total Users</h3>
+      <div class="stat-number" id="total-users">0</div>
+    </div>
+    <div class="stat-card blue">
+      <h3>Total Stores</h3>
+      <div class="stat-number" id="total-stores">0</div>
+    </div>
+    <div class="stat-card">
+      <h3>Total Orders</h3>
+      <div class="stat-number" id="total-orders">0</div>
+    </div>
+    <div class="stat-card pink">
+      <h3>Total Products</h3>
+      <div class="stat-number" id="total-products">0</div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="users">Users</button>
+    <button class="tab-btn" data-tab="stores">Stores</button>
+    <button class="tab-btn" data-tab="orders">Orders</button>
+    <button class="tab-btn" data-tab="reports">Reports</button>
+    <button class="tab-btn" data-tab="audit">Audit Log</button>
+  </div>
+
+  <!-- Users Tab -->
+  <div id="users-tab" class="tab-content active">
+    <div class="dashboard-section">
+      <h3>User Management</h3>
+      <div class="table-responsive">
+        <table id="users-table">
+          <thead>
+          <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Type</th>
+            <th>Actions</th>
+          </tr>
+          </thead>
+          <tbody id="users-list">
+          <tr><td colspan="5" class="loading">Loading users...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stores Tab -->
+  <div id="stores-tab" class="tab-content">
+    <div class="dashboard-section">
+      <h3>Store Management</h3>
+      <div class="table-responsive">
+        <table id="stores-table">
+          <thead>
+          <tr>
+            <th>Store ID</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Rating</th>
+            <th>Actions</th>
+          </tr>
+          </thead>
+          <tbody id="stores-list">
+          <tr><td colspan="5" class="loading">Loading stores...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Orders Tab -->
+  <div id="orders-tab" class="tab-content">
+    <div class="dashboard-section">
+      <h3>All Orders</h3>
+      <div class="table-responsive">
+        <table id="orders-table">
+          <thead>
+          <tr>
+            <th>Order #</th>
+            <th>Client</th>
+            <th>Store</th>
+            <th>Date</th>
+            <th>Status</th>
+            <th>Total</th>
+          </tr>
+          </thead>
+          <tbody id="orders-list">
+          <tr><td colspan="6" class="loading">Loading orders...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reports Tab -->
+  <div id="reports-tab" class="tab-content">
+    <div class="dashboard-section">
+      <h3>System Reports</h3>
+      <div class="form-group">
+        <label for="report-type">Report Type</label>
+        <select id="report-type">
+          <option value="users">User Registration Report</option>
+          <option value="stores">Store Performance Report</option>
+          <option value="sales">Sales Report</option>
+          <option value="revenue">Revenue Report</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="report-start">Start Date</label>
+          <input type="date" id="report-start">
+        </div>
+        <div class="form-group">
+          <label for="report-end">End Date</label>
+          <input type="date" id="report-end">
+        </div>
+      </div>
+      <button id="generate-report" class="btn-primary">Generate Report</button>
+      <div id="report-results" style="margin-top: 2rem;"></div>
+    </div>
+  </div>
+
+  <!-- Audit Log Tab -->
+  <div id="audit-tab" class="tab-content">
+    <div class="dashboard-section">
+      <h3>Audit Log</h3>
+      <div class="table-responsive">
+        <table id="audit-table">
+          <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>User</th>
+            <th>Action</th>
+            <th>Resource</th>
+            <th>Details</th>
+            <th>IP Address</th>
+          </tr>
+          </thead>
+          <tbody id="audit-list">
+          <tr><td colspan="6" class="loading">Loading audit log...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="footer-content">
+    <div class="footer-section">
+      <h3>Handcraft Marketplace</h3>
+      <p>Admin Panel</p>
+    </div>
+    <div class="footer-section">
+      <h3>Quick Links</h3>
+      <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="products.html">Products</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>&copy; 2025 Handcraft Marketplace. All rights reserved.</p>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', async () => {
+    const user = await loadUserData();
+    if (!user || user.userType !== 'admin') {
+      window.location.href = 'index.html';
+      return;
+    }
+
+    document.getElementById('admin-name').textContent = user.username || 'Administrator';
+
+    // Tab switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(`${btn.dataset.tab}-tab`).classList.add('active');
+
+        // Load data for the selected tab
+        switch(btn.dataset.tab) {
+          case 'users':
+            loadUsers();
+            break;
+          case 'stores':
+            loadStores();
+            break;
+          case 'orders':
+            loadAllOrders();
+            break;
+          case 'audit':
+            loadAuditLog();
+            break;
+        }
+      });
+    });
+
+    // Load initial data
+    loadStats();
+    loadUsers();
+
+    // Report generation
+    document.getElementById('generate-report').addEventListener('click', generateReport);
+  });
+
+  async function loadStats() {
+    try {
+      const [usersRes, storesRes, ordersRes, productsRes] = await Promise.all([
+        fetch('/api/all-users'),
+        fetch('/api/stores'),
+        fetch('/api/all-orders'),
+        fetch('/api/products')
+      ]);
+
+      const usersData = await usersRes.json();
+      const storesData = await storesRes.json();
+      const ordersData = await ordersRes.json();
+      const productsData = await productsRes.json();
+
+      document.getElementById('total-users').textContent = usersData.success ? usersData.users.length : 0;
+      document.getElementById('total-stores').textContent = storesData.success ? storesData.stores.length : 0;
+      document.getElementById('total-orders').textContent = ordersData.success ? ordersData.orders.length : 0;
+      document.getElementById('total-products').textContent = productsData.success ? productsData.products.length : 0;
+    } catch (error) {
+      console.error('Error loading stats:', error);
+    }
+  }
+
+  async function loadUsers() {
+    try {
+      const response = await fetch('/api/all-users');
+      const data = await response.json();
+
+      const tbody = document.getElementById('users-list');
+      if (data.success && data.users.length > 0) {
+        tbody.innerHTML = data.users.map(user => `
+                        <tr>
+                            <td>${user.id || user.client_id || 'N/A'}</td>
+                            <td>${user.firstName || user.first_name || user.username || 'N/A'} ${user.lastName || user.last_name || ''}</td>
+                            <td>${user.email || 'N/A'}</td>
+                            <td><span class="status-badge status-${user.user_type || user.userType || 'unknown'}">${user.user_type || user.userType || 'unknown'}</span></td>
+                            <td>
+                                <button class="btn-small" onclick="viewUser('${user.id || user.client_id}')">View</button>
+                            </td>
+                        </tr>
+                    `).join('');
+      } else {
+        tbody.innerHTML = '<tr><td colspan="5">No users found</td></tr>';
+      }
+    } catch (error) {
+      console.error('Error loading users:', error);
+      document.getElementById('users-list').innerHTML = '<tr><td colspan="5">Error loading users</td></tr>';
+    }
+  }
+
+  async function loadStores() {
+    try {
+      const response = await fetch('/api/stores');
+      const data = await response.json();
+
+      const tbody = document.getElementById('stores-list');
+      if (data.success && data.stores.length > 0) {
+        tbody.innerHTML = data.stores.map(store => `
+                        <tr>
+                            <td>${store.store_id}</td>
+                            <td>${store.name}</td>
+                            <td>${store.store_email}</td>
+                            <td>${store.rating || '0.0'}</td>
+                            <td>
+                                <button class="btn-small" onclick="viewStore('${store.store_id}')">View</button>
+                            </td>
+                        </tr>
+                    `).join('');
+      } else {
+        tbody.innerHTML = '<tr><td colspan="5">No stores found</td></tr>';
+      }
+    } catch (error) {
+      console.error('Error loading stores:', error);
+      document.getElementById('stores-list').innerHTML = '<tr><td colspan="5">Error loading stores</td></tr>';
+    }
+  }
+
+  async function loadAllOrders() {
+    try {
+      const response = await fetch('/api/all-orders');
+      const data = await response.json();
+
+      const tbody = document.getElementById('orders-list');
+      if (data.success && data.orders.length > 0) {
+        tbody.innerHTML = data.orders.map(order => `
+                        <tr>
+                            <td>${order.order_num}</td>
+                            <td>${order.first_name} ${order.last_name}</td>
+                            <td>${order.store_name}</td>
+                            <td>${new Date(order.order_date).toLocaleDateString()}</td>
+                            <td><span class="status-badge status-${order.status}">${order.status}</span></td>
+                            <td>$${parseFloat(order.total || 0).toFixed(2)}</td>
+                        </tr>
+                    `).join('');
+      } else {
+        tbody.innerHTML = '<tr><td colspan="6">No orders found</td></tr>';
+      }
+    } catch (error) {
+      console.error('Error loading orders:', error);
+      document.getElementById('orders-list').innerHTML = '<tr><td colspan="6">Error loading orders</td></tr>';
+    }
+  }
+
+  async function loadAuditLog() {
+    // This would need a separate API endpoint
+    document.getElementById('audit-list').innerHTML = '<tr><td colspan="6">Audit log feature coming soon</td></tr>';
+  }
+
+  async function generateReport() {
+    const type = document.getElementById('report-type').value;
+    const start = document.getElementById('report-start').value;
+    const end = document.getElementById('report-end').value;
+
+    if (!start || !end) {
+      alert('Please select start and end dates');
+      return;
+    }
+
+    // Mock report generation
+    document.getElementById('report-results').innerHTML = `
+                <div class="dashboard-section">
+                    <h4>Generated Report: ${type}</h4>
+                    <p>Period: ${start} to ${end}</p>
+                    <div class="loading">Generating report...</div>
+                </div>
+            `;
+
+    // Simulate report generation
+    setTimeout(() => {
+      document.getElementById('report-results').innerHTML = `
+                    <div class="dashboard-section">
+                        <h4>Report Results</h4>
+                        <p><strong>Total Records:</strong> 42</p>
+                        <p><strong>Summary:</strong> Sample report data for demonstration</p>
+                        <button class="btn-small" onclick="downloadReport()">Download Report</button>
+                    </div>
+                `;
+    }, 1500);
+  }
+
+  window.viewUser = (userId) => {
+    alert(`View user ${userId} - Feature coming soon`);
+  };
+
+  window.viewStore = (storeId) => {
+    alert(`View store ${storeId} - Feature coming soon`);
+  };
+
+  window.downloadReport = () => {
+    alert('Report download feature coming soon');
+  };
+</script>
+</body>
+</html>

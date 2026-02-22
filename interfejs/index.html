@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Handcraft Marketplace - Home</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+    <div class="logo-container">
+        <img src="../images/administrative/logo.jpg" alt="Handcraft Marketplace Logo" onerror="this.style.display='none'">
+        <h1>
+            <a href="index.html">
+                <img src="../images/administrative/logo.jpg">
+            </a>
+            Handcraft Marketplace
+        </h1>
+    </div>
+    <nav>
+        <ul>
+            <li><a href="index.html" class="active">Home</a></li>
+            <li><a href="products.html">Products</a></li>
+            <li><a href="login.html">Login</a></li>
+            <li><a href="register.html" class="btn-register">Register</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main>
+    <section class="hero">
+        <div class="hero-content">
+            <h2>Unique Handcrafted Products</h2>
+            <p>Discover beautiful handmade items from talented artisans around the world</p>
+            <a href="products.html" class="btn-primary">Browse Products</a>
+            <a href="register-store.html" class="btn-secondary">Open Your Store</a>
+        </div>
+    </section>
+
+    <section class="features">
+        <h2>Why Choose Handcraft Marketplace?</h2>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🛍️</div>
+                <h3>Unique Products</h3>
+                <p>Each item is handcrafted with care and attention to detail</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🤝</div>
+                <h3>Support Artisans</h3>
+                <p>Directly support independent creators and small businesses</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3>Secure Shopping</h3>
+                <p>Safe payments and buyer protection on every purchase</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🌍</div>
+                <h3>Global Community</h3>
+                <p>Connect with artisans and buyers from around the world</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="categories">
+        <h2>Popular Categories</h2>
+        <div class="category-list" id="category-list">
+            <div class="loading">Loading categories...</div>
+        </div>
+    </section>
+
+    <section class="featured-products">
+        <h2>Featured Products</h2>
+        <div class="product-grid" id="featured-products">
+            <div class="loading">Loading products...</div>
+        </div>
+    </section>
+</main>
+
+<footer>
+    <div class="footer-content">
+        <div class="footer-section">
+            <h3>Handcraft Marketplace</h3>
+            <p>Connecting artisans with buyers worldwide</p>
+        </div>
+        <div class="footer-section">
+            <h3>Quick Links</h3>
+            <ul>
+                <li><a href="index.html">Home</a></li>
+                <li><a href="products.html">Products</a></li>
+                <li><a href="login.html">Login</a></li>
+                <li><a href="register.html">Register</a></li>
+            </ul>
+        </div>
+        <div class="footer-section">
+            <h3>For Sellers</h3>
+            <ul>
+                <li><a href="register-store.html">Open a Store</a></li>
+                <li><a href="#">Seller Guidelines</a></li>
+                <li><a href="#">Pricing</a></li>
+            </ul>
+        </div>
+        <div class="footer-section">
+            <h3>Contact</h3>
+            <p>Email: support@handcraft.com</p>
+            <p>Phone: +1 (555) 123-4567</p>
+        </div>
+    </div>
+    <div class="footer-bottom">
+        <p>&copy; 2025 Handcraft Marketplace. All rights reserved.</p>
+    </div>
+</footer>
+
+<script>
+    // Load categories
+    fetch('/api/categories')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success && data.categories) {
+                const categories = data.categories.slice(0, 6); // Show first 6 categories
+                const categoryList = document.getElementById('category-list');
+                categoryList.innerHTML = '';
+
+                categories.forEach(cat => {
+                    const categoryCard = document.createElement('div');
+                    categoryCard.className = 'category-card';
+                    categoryCard.innerHTML = `
+                            <h3>${cat.name}</h3>
+                            <a href="products.html?category=${cat.category_id}" class="btn-small">Browse</a>
+                        `;
+                    categoryList.appendChild(categoryCard);
+                });
+            } else {
+                document.getElementById('category-list').innerHTML = '<p>No categories found</p>';
+            }
+        })
+        .catch(err => {
+            console.error('Error loading categories:', err);
+            document.getElementById('category-list').innerHTML = '<p>Error loading categories</p>';
+        });
+
+    // Load featured products
+    fetch('/api/products')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success && data.products) {
+                const products = data.products.slice(0, 4); // Show first 4 products
+                const productGrid = document.getElementById('featured-products');
+                productGrid.innerHTML = '';
+
+                products.forEach(product => {
+                    const productCard = document.createElement('div');
+                    productCard.className = 'product-card';
+                    productCard.innerHTML = `
+                            <div class="product-image">
+                                <img src="../images/product-placeholder.jpg" alt="${product.description.substring(0, 30)}" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 fill=%22%23f0f0f0%22/><text x=%2220%22 y=%2250%22 font-family=%22Arial%22 font-size=%2214%22 fill=%22%23999%22>No Image</text></svg>'">
+                            </div>
+                            <div class="product-info">
+                                <h3>${product.description.substring(0, 40)}${product.description.length > 40 ? '...' : ''}</h3>
+                                <p class="product-price">$${parseFloat(product.price).toFixed(2)}</p>
+                                <p class="product-store">${product.store_name || 'Unknown Store'}</p>
+                                <a href="product-detail.html?id=${product.code}" class="btn-small">View Details</a>
+                            </div>
+                        `;
+                    productGrid.appendChild(productCard);
+                });
+            } else {
+                document.getElementById('featured-products').innerHTML = '<p>No products found</p>';
+            }
+        })
+        .catch(err => {
+            console.error('Error loading products:', err);
+            document.getElementById('featured-products').innerHTML = '<p>Error loading products</p>';
+        });
+</script>
+</body>
+</html>
