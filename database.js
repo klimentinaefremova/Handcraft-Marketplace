@@ -1093,45 +1093,93 @@ function getClientStats(clientId, callback) {
 
 // User functions for admin
 function getAllUsers(callback) {
-    const users = [];
+    const usersMap = new Map(); // Use Map to deduplicate by ID
 
     // Get client users
     database.all(
-        `SELECT client_id as id, first_name, last_name, email, 'client' as user_type
-     FROM client
-     ORDER BY client_id`,
+        `SELECT client_id as id, first_name, last_name, email, 'client' as user_type,
+                NULL as username, NULL as role_priority
+         FROM client
+         ORDER BY client_id`,
         [],
         (err, rows) => {
-            if (!err) {
-                users.push(...(rows || []));
+            if (!err && rows) {
+                rows.forEach(row => {
+                    // Clients have lowest priority (5)
+                    row.role_priority = 5;
+                    usersMap.set(row.id, row);
+                });
             }
 
-            // Get personal users
+            // Get personal users (employees and store owners)
             database.all(
                 `SELECT p.id, p.first_name, p.last_name, p.email,
-          CASE WHEN b.boss_id IS NOT NULL THEN 'store_owner'
-               WHEN e.employee_id IS NOT NULL THEN 'store_employee'
-               ELSE 'personal' END as user_type
-         FROM personal p
-         LEFT JOIN boss b ON p.id = b.boss_id
-         LEFT JOIN employees e ON p.id = e.employee_id
-         ORDER BY p.id`,
+                        CASE 
+                            WHEN b.boss_id IS NOT NULL THEN 'store_owner'
+                            ELSE 'store_employee'
+                        END as user_type,
+                        NULL as username,
+                        CASE 
+                            WHEN b.boss_id IS NOT NULL THEN 2  -- store_owner priority 2
+                            ELSE 4                             -- store_employee priority 4
+                        END as role_priority
+                 FROM personal p
+                 LEFT JOIN boss b ON p.id = b.boss_id
+                 LEFT JOIN employees e ON p.id = e.employee_id
+                 WHERE b.boss_id IS NOT NULL OR e.employee_id IS NOT NULL
+                 ORDER BY p.id`,
                 [],
                 (err, rows) => {
-                    if (!err) {
-                        users.push(...(rows || []));
+                    if (!err && rows) {
+                        rows.forEach(row => {
+                            // Only add if not exists or current has higher priority (lower number)
+                            const existing = usersMap.get(row.id);
+                            if (!existing || (existing.role_priority && row.role_priority < existing.role_priority)) {
+                                usersMap.set(row.id, row);
+                            }
+                        });
                     }
 
-                    // Get system users
+                    // Get system users (including admin)
                     database.all(
-                        `SELECT id, username, email, user_type
-             FROM users
-             ORDER BY id`,
+                        `SELECT id, username, email, user_type,
+                                CASE 
+                                    WHEN user_type = 'admin' THEN 1  -- admin highest priority
+                                    ELSE 3                            -- other system users priority 3
+                                END as role_priority
+                         FROM users
+                         ORDER BY id`,
                         [],
                         (err, rows) => {
-                            if (!err) {
-                                users.push(...(rows || []));
+                            if (!err && rows) {
+                                rows.forEach(row => {
+                                    // System users have priority based on type
+                                    const existing = usersMap.get(row.id);
+                                    if (!existing || (existing.role_priority && row.role_priority < existing.role_priority)) {
+                                        // For system users, format the response properly
+                                        const userData = {
+                                            id: row.id,
+                                            username: row.username,
+                                            email: row.email,
+                                            user_type: row.user_type,
+                                            role_priority: row.role_priority
+                                        };
+                                        // Add first_name/last_name if not present
+                                        if (row.user_type === 'admin') {
+                                            userData.first_name = 'Admin';
+                                            userData.last_name = 'User';
+                                        }
+                                        usersMap.set(row.id, userData);
+                                    }
+                                });
                             }
+
+                            // Convert Map to array and remove role_priority before sending
+                            const users = Array.from(usersMap.values()).map(user => {
+                                const { role_priority, ...userWithoutPriority } = user;
+                                return userWithoutPriority;
+                            });
+
                             callback(null, users);
                         }
                     );

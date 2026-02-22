@@ -9,7 +9,6 @@ const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
 const port = process.env.PORT || 3000;
-
 const sessions = new Map();
 const verificationCodes = new Map();
 const tempUsers = new Map();
@@ -31,9 +30,7 @@ if (process.env.SMTP_USER && process.env.SMTP_PASS) {
             pass: process.env.SMTP_PASS
         }
     };
-
     emailTransporter = nodemailer.createTransport(emailConfig);
-
     emailTransporter.verify(function(error, success) {
         if (error) {
             console.log('❌ Email configuration failed:', error.message);
@@ -74,18 +71,18 @@ function sendVerificationEmail(toEmail, code) {
         to: toEmail,
         subject: 'Your Verification Code - Handcraft Marketplace',
         html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #4169E1 0%, #FF69B4 100%); color: white; padding: 20px; border-radius: 10px;">
-        <h2 style="text-align: center;">🎨 Handcraft Marketplace</h2>
-        <div style="background-color: white; color: #333; padding: 20px; border-radius: 8px; margin: 20px 0;">
-          <h3 style="color: #4169E1;">Account Verification</h3>
-          <p>Your verification code is:</p>
-          <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0; color: #4169E1;">
-            ${code}
-          </div>
-          <p style="color: #e74c3c; font-weight: bold;">⚠️ This code will expire in 30 seconds</p>
-          <p style="color: #666; font-size: 12px;">If you didn't request this verification, please ignore this email.</p>
-        </div>
-      </div>`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #4169E1 0%, #FF69B4 100%); color: white; padding: 20px; border-radius: 10px;">
+            <h2 style="text-align: center;">🎨 Handcraft Marketplace</h2>
+            <div style="background-color: white; color: #333; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <h3 style="color: #4169E1;">Account Verification</h3>
+                <p>Your verification code is:</p>
+                <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0; color: #4169E1;">
+                    ${code}
+                </div>
+                <p style="color: #e74c3c; font-weight: bold;">⚠️ This code will expire in 30 seconds</p>
+                <p style="color: #666; font-size: 12px;">If you didn't request this verification, please ignore this email.</p>
+            </div>
+        </div>`
     };
 
     console.log('');
@@ -105,18 +102,18 @@ function send2FACode(toEmail, code) {
         to: toEmail,
         subject: 'Your 2FA Code - Handcraft Marketplace',
         html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #4169E1 0%, #FF69B4 100%); color: white; padding: 20px; border-radius: 10px;">
-        <h2 style="text-align: center;">🎨 Handcraft Marketplace</h2>
-        <div style="background-color: white; color: #333; padding: 20px; border-radius: 8px; margin: 20px 0;">
-          <h3 style="color: #4169E1;">Two-Factor Authentication</h3>
-          <p>Your login verification code is:</p>
-          <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0; color: #4169E1;">
-            ${code}
-          </div>
-          <p style="color: #e74c3c; font-weight: bold;">⚠️ This code will expire in 30 seconds</p>
-          <p style="color: #666; font-size: 12px;">If you're not trying to login, please secure your account immediately.</p>
-        </div>
-      </div>`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #4169E1 0%, #FF69B4 100%); color: white; padding: 20px; border-radius: 10px;">
+            <h2 style="text-align: center;">🎨 Handcraft Marketplace</h2>
+            <div style="background-color: white; color: #333; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <h3 style="color: #4169E1;">Two-Factor Authentication</h3>
+                <p>Your login verification code is:</p>
+                <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0; color: #4169E1;">
+                    ${code}
+                </div>
+                <p style="color: #e74c3c; font-weight: bold;">⚠️ This code will expire in 30 seconds</p>
+                <p style="color: #666; font-size: 12px;">If you're not trying to login, please secure your account immediately.</p>
+            </div>
+        </div>`
     };
 
     console.log('');
@@ -136,19 +133,19 @@ function sendStoreRegistrationEmail(toEmail, code, storeName) {
         to: toEmail,
         subject: 'Store Registration Verification - Handcraft Marketplace',
         html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #4169E1 0%, #FF69B4 100%); color: white; padding: 20px; border-radius: 10px;">
-        <h2 style="text-align: center;">🎨 Handcraft Marketplace</h2>
-        <div style="background-color: white; color: #333; padding: 20px; border-radius: 8px; margin: 20px 0;">
-          <h3 style="color: #4169E1;">Store Registration Verification</h3>
-          <p>Thank you for registering your store "<strong>${storeName}</strong>" on Handcraft Marketplace!</p>
-          <p>Your verification code is:</p>
-          <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0; color: #4169E1;">
-            ${code}
-          </div>
-          <p style="color: #e74c3c; font-weight: bold;">⚠️ This code will expire in 30 seconds</p>
-          <p style="color: #666; font-size: 12px;">If you didn't request this verification, please ignore this email.</p>
-        </div>
-      </div>`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #4169E1 0%, #FF69B4 100%); color: white; padding: 20px; border-radius: 10px;">
+            <h2 style="text-align: center;">🎨 Handcraft Marketplace</h2>
+            <div style="background-color: white; color: #333; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <h3 style="color: #4169E1;">Store Registration Verification</h3>
+                <p>Thank you for registering your store "<strong>${storeName}</strong>" on Handcraft Marketplace!</p>
+                <p>Your verification code is:</p>
+                <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0; color: #4169E1;">
+                    ${code}
+                </div>
+                <p style="color: #e74c3c; font-weight: bold;">⚠️ This code will expire in 30 seconds</p>
+                <p style="color: #666; font-size: 12px;">If you didn't request this verification, please ignore this email.</p>
+            </div>
+        </div>`
     };
 
     console.log('');
@@ -301,21 +298,37 @@ function requireStoreOwner() {
     return function(req, res, callback) {
         requireAuth(req, res, (userId) => {
             const userIdStr = String(userId);
-            const personalId = userIdStr.replace('personal_', '');
 
-            database.database.get(
-                'SELECT boss_id FROM boss WHERE boss_id = $1',
-                [personalId],
-                (err, boss) => {
-                    if (err || !boss) {
-                        res.writeHead(403, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ success: false, message: 'Access denied - not a store owner' }));
-                        return;
+            // Check if this is the admin user (ID 000000)
+            if (userIdStr === '000000') {
+                // Admin is not a store owner
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, message: 'Access denied - not a store owner' }));
+                return;
+            }
+
+            // Check if it's a personal user
+            if (userIdStr.startsWith('personal_')) {
+                const personalId = userIdStr.replace('personal_', '');
+
+                database.database.get(
+                    'SELECT boss_id FROM boss WHERE boss_id = ?',
+                    [personalId],
+                    (err, boss) => {
+                        if (err || !boss) {
+                            res.writeHead(403, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ success: false, message: 'Access denied - not a store owner' }));
+                            return;
+                        }
+
+                        callback(personalId);
                     }
-
-                    callback(personalId);
-                }
-            );
+                );
+            } else {
+                // Not a personal user, so not a store owner
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, message: 'Access denied - not a store owner' }));
+            }
         });
     };
 }
@@ -385,6 +398,8 @@ async function initializeDatabase() {
             console.log('✅ Database recreation completed');
         } else {
             console.log('✅ All required tables exist');
+            // Even if tables exist, ensure admin user exists with ID 000000
+            await ensureAdminUser();
         }
     } catch (err) {
         console.error('❌ Error checking database schema:', err);
@@ -400,6 +415,135 @@ async function initializeDatabase() {
             console.error('❌ Failed to recreate database:', createErr);
         }
     }
+}
+
+// Function to ensure admin user exists with ID 000000
+function ensureAdminUser() {
+    return new Promise((resolve) => {
+        database.database.get(
+            'SELECT * FROM users WHERE id = ? OR username = ? OR email = ?',
+            ['000000', 'admin', 'admin@handcraft.com'],
+            (err, existingAdmin) => {
+                if (err) {
+                    console.error('Error checking for existing admin:', err.message);
+                    resolve();
+                    return;
+                }
+
+                // Insert admin user if it doesn't exist
+                if (!existingAdmin) {
+                    const adminId = '000000';
+                    const adminPassword = bcrypt.hashSync('Admin123!', 10);
+
+                    // Start a transaction
+                    database.database.run('BEGIN TRANSACTION', (err) => {
+                        if (err) {
+                            console.error('Error beginning transaction:', err);
+                            resolve();
+                            return;
+                        }
+
+                        // Insert into users table
+                        database.database.run(
+                            `INSERT INTO users (id, username, email, password, user_type, force_password_change)
+                             VALUES (?, ?, ?, ?, ?, ?)`,
+                            [adminId, 'admin', 'admin@handcraft.com', adminPassword, 'admin', 1],
+                            function(err) {
+                                if (err) {
+                                    database.database.run('ROLLBACK');
+                                    console.error('Error inserting admin user:', err.message);
+                                    resolve();
+                                    return;
+                                }
+
+                                // Insert into personal table (required for boss table)
+                                database.database.run(
+                                    `INSERT INTO personal (id, first_name, last_name, ssn, email, password)
+                                     VALUES (?, ?, ?, ?, ?, ?)`,
+                                    [adminId, 'Admin', 'User', '0000000000000', 'admin@handcraft.com', adminPassword],
+                                    function(err) {
+                                        if (err) {
+                                            database.database.run('ROLLBACK');
+                                            console.error('Error inserting admin personal:', err.message);
+                                            resolve();
+                                            return;
+                                        }
+
+                                        // Insert into boss table (store owner)
+                                        database.database.run(
+                                            `INSERT INTO boss (boss_id, signature)
+                                             VALUES (?, ?)`,
+                                            [adminId, 'Admin Signature'],
+                                            function(err) {
+                                                if (err) {
+                                                    database.database.run('ROLLBACK');
+                                                    console.error('Error inserting admin boss:', err.message);
+                                                    resolve();
+                                                    return;
+                                                }
+
+                                                // Insert into permissions
+                                                database.database.run(
+                                                    `INSERT INTO permissions (personal_id, type, authorisation)
+                                                     VALUES (?, ?, ?)`,
+                                                    [adminId, 'ADMIN', 'full_access'],
+                                                    function(err) {
+                                                        if (err) {
+                                                            console.error('Error inserting admin permissions:', err.message);
+                                                            // Continue even if this fails
+                                                        }
+
+                                                        // Assign admin role
+                                                        database.database.get(
+                                                            'SELECT role_id FROM roles WHERE name = ?',
+                                                            ['admin'],
+                                                            (err, adminRole) => {
+                                                                if (!err && adminRole) {
+                                                                    database.database.run(
+                                                                        'INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)',
+                                                                        [adminId, adminRole.role_id],
+                                                                        (err) => {
+                                                                            if (err) {
+                                                                                console.error('Error assigning admin role:', err.message);
+                                                                            }
+                                                                        }
+                                                                    );
+                                                                }
+
+                                                                database.database.run('COMMIT', (commitErr) => {
+                                                                    if (commitErr) {
+                                                                        console.error('Error committing transaction:', commitErr);
+                                                                        database.database.run('ROLLBACK');
+                                                                    } else {
+                                                                        console.log('\n');
+                                                                        console.log('🔐 ===== ADMIN CREDENTIALS =====');
+                                                                        console.log('🆔 ID: 000000');
+                                                                        console.log('👤 Username: admin');
+                                                                        console.log('📧 Email: admin@handcraft.com');
+                                                                        console.log('🔑 Password: Admin123!');
+                                                                        console.log('⚠️ This is a first-time login. You will be required to change your password after 2FA verification.');
+                                                                        console.log('================================\n');
+                                                                    }
+                                                                    resolve();
+                                                                });
+                                                            }
+                                                        );
+                                                    }
+                                                );
+                                            }
+                                        );
+                                    }
+                                );
+                            }
+                        );
+                    });
+                } else {
+                    console.log('✅ Admin user already exists with ID:', existingAdmin.id);
+                    resolve();
+                }
+            }
+        );
+    });
 }
 
 function dropAllTables() {
@@ -462,225 +606,225 @@ function createAllTables() {
         const createQueries = [
             // Client table (SERIAL ID starting from 1000)
             `CREATE TABLE IF NOT EXISTS client (
-        client_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        first_name VARCHAR(100) NOT NULL,
-        last_name VARCHAR(100) NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
+                client_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                first_name VARCHAR(100) NOT NULL,
+                last_name VARCHAR(100) NOT NULL,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`,
 
             // Store table (VARCHAR ID)
             `CREATE TABLE IF NOT EXISTS store (
-        store_id VARCHAR(10) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        date_of_founding DATE NOT NULL,
-        physical_address TEXT NOT NULL,
-        store_email VARCHAR(255) UNIQUE NOT NULL,
-        rating DECIMAL(3,2) DEFAULT 0.0
-      )`,
+                store_id VARCHAR(10) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                date_of_founding DATE NOT NULL,
+                physical_address TEXT NOT NULL,
+                store_email VARCHAR(255) UNIQUE NOT NULL,
+                rating DECIMAL(3,2) DEFAULT 0.0
+            )`,
 
             // Category table (SERIAL ID starting from 1)
             `CREATE TABLE IF NOT EXISTS category (
-        category_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name VARCHAR(100) NOT NULL,
-        description TEXT,
-        parent_category_id INTEGER REFERENCES category(category_id) ON DELETE SET NULL
-      )`,
+                category_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(100) NOT NULL,
+                description TEXT,
+                parent_category_id INTEGER REFERENCES category(category_id) ON DELETE SET NULL
+            )`,
 
             // Users table (VARCHAR ID)
             `CREATE TABLE IF NOT EXISTS users (
-        id VARCHAR(50) PRIMARY KEY,
-        username VARCHAR(100) UNIQUE NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255) NOT NULL,
-        user_type VARCHAR(50) NOT NULL,
-        force_password_change INTEGER DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
+                id VARCHAR(50) PRIMARY KEY,
+                username VARCHAR(100) UNIQUE NOT NULL,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                user_type VARCHAR(50) NOT NULL,
+                force_password_change INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`,
 
             // Personal table (VARCHAR ID - format: storeId(3) + '001' for owner, storeId(3) + employeeNum(3) for employees)
             `CREATE TABLE IF NOT EXISTS personal (
-        id VARCHAR(10) PRIMARY KEY,
-        first_name VARCHAR(100) NOT NULL,
-        last_name VARCHAR(100) NOT NULL,
-        ssn VARCHAR(13) UNIQUE NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
+                id VARCHAR(10) PRIMARY KEY,
+                first_name VARCHAR(100) NOT NULL,
+                last_name VARCHAR(100) NOT NULL,
+                ssn VARCHAR(13) UNIQUE NOT NULL,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`,
 
             // Product table (VARCHAR ID)
             `CREATE TABLE IF NOT EXISTS product (
-        id VARCHAR(50) PRIMARY KEY,
-        code VARCHAR(20) UNIQUE NOT NULL,
-        description TEXT NOT NULL,
-        price DECIMAL(10,2) NOT NULL,
-        availability INTEGER NOT NULL DEFAULT 0,
-        weight DECIMAL(10,2),
-        dimensions VARCHAR(50),
-        production_time INTEGER,
-        category_id INTEGER REFERENCES category(category_id) ON DELETE SET NULL,
-        store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
+                id VARCHAR(50) PRIMARY KEY,
+                code VARCHAR(20) UNIQUE NOT NULL,
+                description TEXT NOT NULL,
+                price DECIMAL(10,2) NOT NULL,
+                availability INTEGER NOT NULL DEFAULT 0,
+                weight DECIMAL(10,2),
+                dimensions VARCHAR(50),
+                production_time INTEGER,
+                category_id INTEGER REFERENCES category(category_id) ON DELETE SET NULL,
+                store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`,
 
             // Boss table (VARCHAR ID - references personal.id)
             `CREATE TABLE IF NOT EXISTS boss (
-        boss_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
-        signature TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
+                boss_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
+                signature TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`,
 
             // Employees table (VARCHAR ID - references personal.id)
             `CREATE TABLE IF NOT EXISTS employees (
-        employee_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
-        date_of_hire DATE NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
+                employee_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
+                date_of_hire DATE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`,
 
             // Works_in_store table (junction)
             `CREATE TABLE IF NOT EXISTS works_in_store (
-        personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
-        store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
-        PRIMARY KEY (personal_id, store_id)
-      )`,
+                personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
+                store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
+                PRIMARY KEY (personal_id, store_id)
+            )`,
 
             // Permissions table
             `CREATE TABLE IF NOT EXISTS permissions (
-        permission_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
-        type VARCHAR(50) NOT NULL,
-        authorisation TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
+                permission_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
+                type VARCHAR(50) NOT NULL,
+                authorisation TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`,
 
             // Order table (VARCHAR ID)
             `CREATE TABLE IF NOT EXISTS "order" (
-        order_num VARCHAR(20) PRIMARY KEY,
-        client_id INTEGER REFERENCES client(client_id) ON DELETE SET NULL,
-        order_date TIMESTAMP NOT NULL,
-        quantity INTEGER NOT NULL,
-        payment_method VARCHAR(50) NOT NULL,
-        discount DECIMAL(10,2) DEFAULT 0,
-        delivery_address TEXT NOT NULL,
-        store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE SET NULL,
-        status VARCHAR(50) DEFAULT 'pending',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
+                order_num VARCHAR(20) PRIMARY KEY,
+                client_id INTEGER REFERENCES client(client_id) ON DELETE SET NULL,
+                order_date TIMESTAMP NOT NULL,
+                quantity INTEGER NOT NULL,
+                payment_method VARCHAR(50) NOT NULL,
+                discount DECIMAL(10,2) DEFAULT 0,
+                delivery_address TEXT NOT NULL,
+                store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE SET NULL,
+                status VARCHAR(50) DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`,
 
             // Order_items table
             `CREATE TABLE IF NOT EXISTS order_items (
-        item_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        order_num VARCHAR(20) REFERENCES "order"(order_num) ON DELETE CASCADE,
-        product_code VARCHAR(20) REFERENCES product(code) ON DELETE SET NULL,
-        quantity INTEGER NOT NULL,
-        price DECIMAL(10,2) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
+                item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_num VARCHAR(20) REFERENCES "order"(order_num) ON DELETE CASCADE,
+                product_code VARCHAR(20) REFERENCES product(code) ON DELETE SET NULL,
+                quantity INTEGER NOT NULL,
+                price DECIMAL(10,2) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`,
 
             // Review table (VARCHAR ID)
             `CREATE TABLE IF NOT EXISTS review (
-        review_id VARCHAR(20) PRIMARY KEY,
-        client_id INTEGER REFERENCES client(client_id) ON DELETE SET NULL,
-        product_code VARCHAR(20) REFERENCES product(code) ON DELETE CASCADE,
-        rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
-        comment TEXT,
-        review_date TIMESTAMP NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
+                review_id VARCHAR(20) PRIMARY KEY,
+                client_id INTEGER REFERENCES client(client_id) ON DELETE SET NULL,
+                product_code VARCHAR(20) REFERENCES product(code) ON DELETE CASCADE,
+                rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+                comment TEXT,
+                review_date TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`,
 
             // Request table (VARCHAR ID)
             `CREATE TABLE IF NOT EXISTS request (
-        request_num VARCHAR(50) PRIMARY KEY,
-        date_and_time TIMESTAMP NOT NULL,
-        problem TEXT NOT NULL,
-        client_id INTEGER REFERENCES client(client_id) ON DELETE SET NULL,
-        store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
-        status VARCHAR(50) DEFAULT 'pending',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
+                request_num VARCHAR(50) PRIMARY KEY,
+                date_and_time TIMESTAMP NOT NULL,
+                problem TEXT NOT NULL,
+                client_id INTEGER REFERENCES client(client_id) ON DELETE SET NULL,
+                store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
+                status VARCHAR(50) DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`,
 
             // Refund table (VARCHAR ID)
             `CREATE TABLE IF NOT EXISTS refund (
-        refund_id VARCHAR(50) PRIMARY KEY,
-        order_num VARCHAR(20) REFERENCES "order"(order_num) ON DELETE CASCADE,
-        amount DECIMAL(10,2) NOT NULL,
-        reason TEXT NOT NULL,
-        status VARCHAR(50) DEFAULT 'pending',
-        request_date TIMESTAMP NOT NULL,
-        processed_date TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
+                refund_id VARCHAR(50) PRIMARY KEY,
+                order_num VARCHAR(20) REFERENCES "order"(order_num) ON DELETE CASCADE,
+                amount DECIMAL(10,2) NOT NULL,
+                reason TEXT NOT NULL,
+                status VARCHAR(50) DEFAULT 'pending',
+                request_date TIMESTAMP NOT NULL,
+                processed_date TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`,
 
             // Report table (VARCHAR ID)
             `CREATE TABLE IF NOT EXISTS report (
-        id VARCHAR(50) PRIMARY KEY,
-        store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
-        period VARCHAR(50) NOT NULL,
-        start_date DATE NOT NULL,
-        end_date DATE NOT NULL,
-        type VARCHAR(50) NOT NULL,
-        generated_by VARCHAR(10) REFERENCES personal(id) ON DELETE SET NULL,
-        generated_at TIMESTAMP NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
+                id VARCHAR(50) PRIMARY KEY,
+                store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
+                period VARCHAR(50) NOT NULL,
+                start_date DATE NOT NULL,
+                end_date DATE NOT NULL,
+                type VARCHAR(50) NOT NULL,
+                generated_by VARCHAR(10) REFERENCES personal(id) ON DELETE SET NULL,
+                generated_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`,
 
             // Audit_log table (SERIAL ID)
             `CREATE TABLE IF NOT EXISTS audit_log (
-        log_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id VARCHAR(50),
-        action VARCHAR(100) NOT NULL,
-        resource_type VARCHAR(50),
-        resource_id VARCHAR(50),
-        details TEXT,
-        ip_address VARCHAR(45),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
+                log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id VARCHAR(50),
+                action VARCHAR(100) NOT NULL,
+                resource_type VARCHAR(50),
+                resource_id VARCHAR(50),
+                details TEXT,
+                ip_address VARCHAR(45),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`,
 
             // Color table (SERIAL ID)
             `CREATE TABLE IF NOT EXISTS color (
-        color_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name VARCHAR(50) NOT NULL,
-        hex_code VARCHAR(7) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
+                color_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(50) NOT NULL,
+                hex_code VARCHAR(7) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`,
 
             // Image table (SERIAL ID)
             `CREATE TABLE IF NOT EXISTS image (
-        image_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        product_code VARCHAR(20) REFERENCES product(code) ON DELETE CASCADE,
-        image_url TEXT NOT NULL,
-        is_primary BOOLEAN DEFAULT FALSE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
+                image_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_code VARCHAR(20) REFERENCES product(code) ON DELETE CASCADE,
+                image_url TEXT NOT NULL,
+                is_primary BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`,
 
             // Delivery_address table (SERIAL ID)
             `CREATE TABLE IF NOT EXISTS delivery_address (
-        address_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        client_id INTEGER REFERENCES client(client_id) ON DELETE CASCADE,
-        address TEXT NOT NULL,
-        city VARCHAR(100) NOT NULL,
-        postcode VARCHAR(20) NOT NULL,
-        country VARCHAR(100) NOT NULL,
-        is_default BOOLEAN DEFAULT FALSE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
+                address_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_id INTEGER REFERENCES client(client_id) ON DELETE CASCADE,
+                address TEXT NOT NULL,
+                city VARCHAR(100) NOT NULL,
+                postcode VARCHAR(20) NOT NULL,
+                country VARCHAR(100) NOT NULL,
+                is_default BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`,
 
             // Roles table (SERIAL ID)
             `CREATE TABLE IF NOT EXISTS roles (
-        role_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name VARCHAR(50) UNIQUE NOT NULL,
-        description TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
+                role_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(50) UNIQUE NOT NULL,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`,
 
             // User_roles table (junction)
             `CREATE TABLE IF NOT EXISTS user_roles (
-        user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
-        role_id INTEGER REFERENCES roles(role_id) ON DELETE CASCADE,
-        PRIMARY KEY (user_id, role_id)
-      )`
+                user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+                role_id INTEGER REFERENCES roles(role_id) ON DELETE CASCADE,
+                PRIMARY KEY (user_id, role_id)
+            )`
         ];
 
         let index = 0;
@@ -765,26 +909,6 @@ function insertInitialData() {
     return new Promise((resolve, reject) => {
         console.log('📝 Inserting initial data...');
 
-        // REMOVED: Category insertion - now handled by database.ensureGeneralCategory()
-
-        // Insert admin user
-        const adminId = 'admin_' + Date.now().toString().slice(-6);
-        const adminPassword = bcrypt.hashSync('Admin123!', 10);
-
-        database.database.run(
-            `INSERT INTO users (id, username, email, password, user_type, force_password_change)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT DO NOTHING`,
-            [adminId, 'admin', 'admin@handcraft.com', adminPassword, 'admin', 1],
-            (err) => {
-                if (err) {
-                    console.error('Error inserting admin user:', err.message);
-                } else {
-                    console.log('✅ Admin user created');
-                }
-            }
-        );
-
         // Insert default roles
         const roles = [
             { name: 'admin', description: 'System administrator' },
@@ -799,8 +923,8 @@ function insertInitialData() {
         roles.forEach(role => {
             database.database.run(
                 `INSERT INTO roles (name, description)
-         VALUES ($1, $2)
-         ON CONFLICT DO NOTHING`,
+                 VALUES (?, ?)
+                 ON CONFLICT DO NOTHING`,
                 [role.name, role.description],
                 (err) => {
                     if (err) {
@@ -809,6 +933,9 @@ function insertInitialData() {
                     rolesInserted++;
                     if (rolesInserted === roles.length) {
                         console.log('✅ Roles inserted');
+
+                        // Create admin user with ID 000000
+                        createAdminUser();
 
                         // Ensure General category exists
                         database.ensureGeneralCategory((err) => {
@@ -824,6 +951,125 @@ function insertInitialData() {
             );
         });
     });
+}
+
+// Function to create admin user with ID 000000
+function createAdminUser() {
+    const adminId = '000000';
+    const adminPassword = bcrypt.hashSync('Admin123!', 10);
+
+    database.database.get(
+        'SELECT * FROM users WHERE id = ? OR username = ? OR email = ?',
+        [adminId, 'admin', 'admin@handcraft.com'],
+        (err, existingAdmin) => {
+            if (err) {
+                console.error('Error checking for existing admin:', err.message);
+                return;
+            }
+
+            if (!existingAdmin) {
+                // Start a transaction
+                database.database.run('BEGIN TRANSACTION', (err) => {
+                    if (err) {
+                        console.error('Error beginning transaction:', err);
+                        return;
+                    }
+
+                    // Insert into users table
+                    database.database.run(
+                        `INSERT INTO users (id, username, email, password, user_type, force_password_change)
+                         VALUES (?, ?, ?, ?, ?, ?)`,
+                        [adminId, 'admin', 'admin@handcraft.com', adminPassword, 'admin', 1],
+                        function(err) {
+                            if (err) {
+                                database.database.run('ROLLBACK');
+                                console.error('Error inserting admin user:', err.message);
+                                return;
+                            }
+
+                            // Insert into personal table (required for boss table)
+                            database.database.run(
+                                `INSERT INTO personal (id, first_name, last_name, ssn, email, password)
+                                 VALUES (?, ?, ?, ?, ?, ?)`,
+                                [adminId, 'Admin', 'User', '0000000000000', 'admin@handcraft.com', adminPassword],
+                                function(err) {
+                                    if (err) {
+                                        database.database.run('ROLLBACK');
+                                        console.error('Error inserting admin personal:', err.message);
+                                        return;
+                                    }
+
+                                    // Insert into boss table (store owner)
+                                    database.database.run(
+                                        `INSERT INTO boss (boss_id, signature)
+                                         VALUES (?, ?)`,
+                                        [adminId, 'Admin Signature'],
+                                        function(err) {
+                                            if (err) {
+                                                database.database.run('ROLLBACK');
+                                                console.error('Error inserting admin boss:', err.message);
+                                                return;
+                                            }
+
+                                            // Insert into permissions
+                                            database.database.run(
+                                                `INSERT INTO permissions (personal_id, type, authorisation)
+                                                 VALUES (?, ?, ?)`,
+                                                [adminId, 'ADMIN', 'full_access'],
+                                                function(err) {
+                                                    if (err) {
+                                                        console.error('Error inserting admin permissions:', err.message);
+                                                        // Continue even if this fails
+                                                    }
+
+                                                    // Assign admin role
+                                                    database.database.get(
+                                                        'SELECT role_id FROM roles WHERE name = ?',
+                                                        ['admin'],
+                                                        (err, adminRole) => {
+                                                            if (!err && adminRole) {
+                                                                database.database.run(
+                                                                    'INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)',
+                                                                    [adminId, adminRole.role_id],
+                                                                    (err) => {
+                                                                        if (err) {
+                                                                            console.error('Error assigning admin role:', err.message);
+                                                                        }
+                                                                    }
+                                                                );
+                                                            }
+
+                                                            database.database.run('COMMIT', (commitErr) => {
+                                                                if (commitErr) {
+                                                                    console.error('Error committing transaction:', commitErr);
+                                                                    database.database.run('ROLLBACK');
+                                                                } else {
+                                                                    console.log('\n');
+                                                                    console.log('🔐 ===== ADMIN CREDENTIALS =====');
+                                                                    console.log('🆔 ID: 000000');
+                                                                    console.log('👤 Username: admin');
+                                                                    console.log('📧 Email: admin@handcraft.com');
+                                                                    console.log('🔑 Password: Admin123!');
+                                                                    console.log('⚠️ This is a first-time login. You will be required to change your password after 2FA verification.');
+                                                                    console.log('================================\n');
+                                                                }
+                                                            });
+                                                        }
+                                                    );
+                                                }
+                                            );
+                                        }
+                                    );
+                                }
+                            );
+                        }
+                    );
+                });
+            } else {
+                console.log('✅ Admin user already exists with ID:', existingAdmin.id);
+            }
+        }
+    );
 }
 
 // Initialize database on startup
@@ -883,6 +1129,47 @@ const server = http.createServer((req, res) => {
     } else if (pathname === '/verify-2fa.html') {
         serveStaticFile(res, 'verify-2fa.html', 'text/html');
     } else if (pathname === '/admin.html') {
+        // Check if user is authenticated
+        const cookies = parseCookies(req);
+        const sessionId = cookies.sessionId;
+
+        if (!sessionId || !sessions.has(sessionId)) {
+            res.writeHead(302, { 'Location': '/login.html' });
+            res.end();
+            return;
+        }
+
+        // Get user from session
+        const userId = sessions.get(sessionId);
+
+        // Check if this is the admin user
+        if (userId !== '000000') {
+            // Not admin, redirect to appropriate dashboard
+            if (userId.startsWith('client_')) {
+                res.writeHead(302, { 'Location': '/client-dashboard.html' });
+            } else if (userId.startsWith('personal_')) {
+                // Check if store owner or employee
+                const personalId = userId.replace('personal_', '');
+                database.database.get(
+                    'SELECT boss_id FROM boss WHERE boss_id = ?',
+                    [personalId],
+                    (err, boss) => {
+                        if (boss) {
+                            res.writeHead(302, { 'Location': '/store-owner.html' });
+                        } else {
+                            res.writeHead(302, { 'Location': '/store-employee.html' });
+                        }
+                        res.end();
+                    }
+                );
+                return;
+            } else {
+                res.writeHead(302, { 'Location': '/dashboard.html' });
+            }
+            res.end();
+            return;
+        }
+
         serveStaticFile(res, 'admin.html', 'text/html');
     } else if (pathname === '/store-owner.html') {
         serveStaticFile(res, 'store-owner.html', 'text/html');
@@ -1088,7 +1375,7 @@ const server = http.createServer((req, res) => {
                 }
 
                 database.database.get(
-                    'SELECT store_id FROM store WHERE store_email = $1',
+                    'SELECT store_id FROM store WHERE store_email = ?',
                     [formData.storeEmail],
                     (err, existingStore) => {
                         if (err) {
@@ -1472,7 +1759,7 @@ const server = http.createServer((req, res) => {
 
                     // Insert into store table (store_id is VARCHAR)
                     database.database.run(
-                        'INSERT INTO store (store_id, name, date_of_founding, physical_address, store_email, rating) VALUES ($1, $2, $3, $4, $5, $6)',
+                        'INSERT INTO store (store_id, name, date_of_founding, physical_address, store_email, rating) VALUES (?, ?, ?, ?, ?, ?)',
                         [
                             tempStoreData.storeId,
                             tempStoreData.storeName,
@@ -1492,7 +1779,7 @@ const server = http.createServer((req, res) => {
 
                             // Insert into personal table (id is VARCHAR)
                             database.database.run(
-                                'INSERT INTO personal (id, first_name, last_name, ssn, email, password) VALUES ($1, $2, $3, $4, $5, $6)',
+                                'INSERT INTO personal (id, first_name, last_name, ssn, email, password) VALUES (?, ?, ?, ?, ?, ?)',
                                 [
                                     tempStoreData.personalId,
                                     tempStoreData.ownerFirstName,
@@ -1520,7 +1807,7 @@ const server = http.createServer((req, res) => {
 
                                     // Insert into boss table (boss_id is VARCHAR, references personal.id)
                                     database.database.run(
-                                        'INSERT INTO boss (boss_id, signature) VALUES ($1, $2)',
+                                        'INSERT INTO boss (boss_id, signature) VALUES (?, ?)',
                                         [tempStoreData.personalId, tempStoreData.signature],
                                         (err) => {
                                             if (err) {
@@ -1533,7 +1820,7 @@ const server = http.createServer((req, res) => {
 
                                             // Insert into works_in_store table (personal_id is VARCHAR, store_id is VARCHAR)
                                             database.database.run(
-                                                'INSERT INTO works_in_store (personal_id, store_id) VALUES ($1, $2)',
+                                                'INSERT INTO works_in_store (personal_id, store_id) VALUES (?, ?)',
                                                 [tempStoreData.personalId, tempStoreData.storeId],
                                                 (err) => {
                                                     if (err) {
@@ -1546,7 +1833,7 @@ const server = http.createServer((req, res) => {
 
                                                     // Insert into permissions table (personal_id is VARCHAR)
                                                     database.database.run(
-                                                        'INSERT INTO permissions (personal_id, type, authorisation) VALUES ($1, $2, $3)',
+                                                        'INSERT INTO permissions (personal_id, type, authorisation) VALUES (?, ?, ?)',
                                                         [tempStoreData.personalId, 'BOSS', 'full_access'],
                                                         (err) => {
                                                             if (err) {
@@ -1630,7 +1917,7 @@ const server = http.createServer((req, res) => {
                     } else {
                         if (tempUserData.address && tempUserData.city && tempUserData.postcode && tempUserData.country) {
                             database.database.run(
-                                'INSERT INTO delivery_address (client_id, address, city, postcode, country, is_default) VALUES ($1, $2, $3, $4, $5, $6)',
+                                'INSERT INTO delivery_address (client_id, address, city, postcode, country, is_default) VALUES (?, ?, ?, ?, ?, ?)',
                                 [
                                     clientId,
                                     tempUserData.address,
@@ -1664,7 +1951,6 @@ const server = http.createServer((req, res) => {
                 });
             } else {
                 const userId = 'user_' + Date.now().toString().slice(-8);
-
                 database.createUser(userId, tempUserData.username, tempUserData.email, tempUserData.password, tempUserData.userType, (err, userId) => {
                     if (err) {
                         console.error('Error creating user:', err);
@@ -1701,6 +1987,69 @@ const server = http.createServer((req, res) => {
 
             console.log(`🔍 Login attempt for email: ${email}`);
 
+            // First check if it's the admin user (special case)
+            if (email === 'admin@handcraft.com') {
+                database.getUserByUsername('admin', (err, adminUser) => {
+                    if (err || !adminUser) {
+                        console.error('Admin user not found');
+                        database.logAudit(null, 'LOGIN_FAILED', 'auth', null, `Admin login failed - user not found`, ipAddress);
+                        res.writeHead(401, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ success: false, message: 'Invalid email or password' }));
+                        return;
+                    }
+
+                    if (database.verifyPassword(password, adminUser.password)) {
+                        const isFirstTimeLogin = adminUser.force_password_change === 1;
+
+                        const twoFACode = generateVerificationCode();
+
+                        verificationCodes.set(adminUser.email, {
+                            code: twoFACode,
+                            timestamp: Date.now(),
+                            userId: adminUser.id,
+                            isFirstTimeLogin: isFirstTimeLogin,
+                            userType: 'admin',
+                            needsPasswordChange: isFirstTimeLogin
+                        });
+
+                        console.log(`⏰ Generated 2FA code for admin ${adminUser.email}`);
+
+                        send2FACode(adminUser.email, twoFACode)
+                            .then(() => {
+                                res.writeHead(200, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({
+                                    success: true,
+                                    message: 'Two-factor authentication code sent to your email',
+                                    requires2FA: true,
+                                    email: adminUser.email,
+                                    username: adminUser.username,
+                                    isFirstTimeLogin: isFirstTimeLogin,
+                                    userType: 'admin'
+                                }));
+                            })
+                            .catch(error => {
+                                console.error('Error sending 2FA email:', error);
+                                res.writeHead(200, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({
+                                    success: true,
+                                    message: 'Two-factor authentication required',
+                                    requires2FA: true,
+                                    email: adminUser.email,
+                                    username: adminUser.username,
+                                    isFirstTimeLogin: isFirstTimeLogin,
+                                    userType: 'admin',
+                                    developmentCode: twoFACode
+                                }));
+                            });
+                    } else {
+                        database.logAudit(adminUser.id, 'LOGIN_FAILED', 'auth', adminUser.id.toString(), 'Invalid password for admin', ipAddress);
+                        res.writeHead(401, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ success: false, message: 'Invalid email or password' }));
+                    }
+                });
+                return;
+            }
+
             // First check if it's a client
             database.getClientByEmail(email, (err, client) => {
                 if (err) {
@@ -1732,7 +2081,6 @@ const server = http.createServer((req, res) => {
                         // Clients go directly to dashboard (no 2FA)
                         const sessionId = generateSessionId();
                         const clientId = client.client_ID;
-
                         sessions.set(sessionId, `client_${clientId}`);
 
                         console.log(`✅ Client login successful. Session: ${sessionId}, User: client_${clientId}`);
@@ -1758,6 +2106,7 @@ const server = http.createServer((req, res) => {
                             redirectTo: 'client-dashboard.html'
                         }));
                     });
+
                     return;
                 }
 
@@ -1844,6 +2193,7 @@ const server = http.createServer((req, res) => {
                                                     });
                                             }
                                         );
+
                                         return;
                                     }
 
@@ -1904,6 +2254,7 @@ const server = http.createServer((req, res) => {
                                                             });
                                                     }
                                                 );
+
                                                 return;
                                             }
 
@@ -1923,8 +2274,7 @@ const server = http.createServer((req, res) => {
                                                             }
 
                                                             if (database.verifyPassword(password, userByUsername.password)) {
-                                                                const isAdminUser = userByUsername.username === 'admin';
-                                                                const isFirstTimeLogin = isAdminUser && userByUsername.force_password_change === 1;
+                                                                const isFirstTimeLogin = userByUsername.force_password_change === 1;
 
                                                                 const twoFACode = generateVerificationCode();
 
@@ -1933,7 +2283,7 @@ const server = http.createServer((req, res) => {
                                                                     timestamp: Date.now(),
                                                                     userId: userByUsername.id,
                                                                     isFirstTimeLogin: isFirstTimeLogin,
-                                                                    userType: isAdminUser ? 'admin' : userByUsername.user_type,
+                                                                    userType: userByUsername.user_type,
                                                                     needsPasswordChange: isFirstTimeLogin
                                                                 });
 
@@ -1947,7 +2297,7 @@ const server = http.createServer((req, res) => {
                                                                             email: userByUsername.email,
                                                                             username: userByUsername.username,
                                                                             isFirstTimeLogin: isFirstTimeLogin,
-                                                                            userType: isAdminUser ? 'admin' : userByUsername.user_type
+                                                                            userType: userByUsername.user_type
                                                                         }));
                                                                     })
                                                                     .catch(error => {
@@ -1960,7 +2310,7 @@ const server = http.createServer((req, res) => {
                                                                             email: userByUsername.email,
                                                                             username: userByUsername.username,
                                                                             isFirstTimeLogin: isFirstTimeLogin,
-                                                                            userType: isAdminUser ? 'admin' : userByUsername.user_type,
+                                                                            userType: userByUsername.user_type,
                                                                             developmentCode: twoFACode
                                                                         }));
                                                                     });
@@ -1970,12 +2320,12 @@ const server = http.createServer((req, res) => {
                                                                 res.end(JSON.stringify({ success: false, message: 'Invalid email or password' }));
                                                             }
                                                         });
+
                                                         return;
                                                     }
 
                                                     if (database.verifyPassword(password, user.password)) {
-                                                        const isAdminUser = user.username === 'admin';
-                                                        const isFirstTimeLogin = isAdminUser && user.force_password_change === 1;
+                                                        const isFirstTimeLogin = user.force_password_change === 1;
 
                                                         const twoFACode = generateVerificationCode();
 
@@ -1984,7 +2334,7 @@ const server = http.createServer((req, res) => {
                                                             timestamp: Date.now(),
                                                             userId: user.id,
                                                             isFirstTimeLogin: isFirstTimeLogin,
-                                                            userType: isAdminUser ? 'admin' : user.user_type,
+                                                            userType: user.user_type,
                                                             needsPasswordChange: isFirstTimeLogin
                                                         });
 
@@ -1998,7 +2348,7 @@ const server = http.createServer((req, res) => {
                                                                     email: user.email,
                                                                     username: user.username,
                                                                     isFirstTimeLogin: isFirstTimeLogin,
-                                                                    userType: isAdminUser ? 'admin' : user.user_type
+                                                                    userType: user.user_type
                                                                 }));
                                                             })
                                                             .catch(error => {
@@ -2011,7 +2361,7 @@ const server = http.createServer((req, res) => {
                                                                     email: user.email,
                                                                     username: user.username,
                                                                     isFirstTimeLogin: isFirstTimeLogin,
-                                                                    userType: isAdminUser ? 'admin' : user.user_type,
+                                                                    userType: user.user_type,
                                                                     developmentCode: twoFACode
                                                                 }));
                                                             });
@@ -2027,6 +2377,7 @@ const server = http.createServer((req, res) => {
                                 }
                             );
                         });
+
                         return;
                     }
 
@@ -2055,7 +2406,7 @@ const server = http.createServer((req, res) => {
             }
 
             database.database.get(
-                'SELECT * FROM users WHERE email = $1',
+                'SELECT * FROM users WHERE email = ?',
                 [email],
                 (err, user) => {
                     if (err || !user) {
@@ -2072,8 +2423,8 @@ const server = http.createServer((req, res) => {
                                 code: newTwoFACode,
                                 timestamp: Date.now(),
                                 userId: userByUsername.id,
-                                isAdmin: userByUsername.username === 'admin' && userByUsername.force_password_change === 1,
-                                needsPasswordChange: userByUsername.username === 'admin' && userByUsername.force_password_change === 1,
+                                isFirstTimeLogin: userByUsername.force_password_change === 1,
+                                needsPasswordChange: userByUsername.force_password_change === 1,
                                 userType: userByUsername.user_type
                             });
 
@@ -2099,6 +2450,7 @@ const server = http.createServer((req, res) => {
                                     }));
                                 });
                         });
+
                         return;
                     }
 
@@ -2108,8 +2460,8 @@ const server = http.createServer((req, res) => {
                         code: newTwoFACode,
                         timestamp: Date.now(),
                         userId: user.id,
-                        isAdmin: user.username === 'admin' && user.force_password_change === 1,
-                        needsPasswordChange: user.username === 'admin' && user.force_password_change === 1,
+                        isFirstTimeLogin: user.force_password_change === 1,
+                        needsPasswordChange: user.force_password_change === 1,
                         userType: user.user_type
                     });
 
@@ -2190,6 +2542,7 @@ const server = http.createServer((req, res) => {
                     userType: verificationData.userType,
                     redirectTo: 'change-password.html?forced=true'
                 }));
+
                 return;
             }
 
@@ -2271,22 +2624,96 @@ const server = http.createServer((req, res) => {
             const sessionId = cookies.sessionId;
 
             if (tempAdminSessions.has(sessionId)) {
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
-                    success: true,
-                    user: {
-                        id: userId,
-                        username: 'admin',
-                        needsPasswordChange: true
-                    },
-                    isTempSession: true
-                }));
+                // This is a temporary session (password change required)
+                // Get user info to determine type
+                database.getUserById(userId, (err, user) => {
+                    if (err || !user) {
+                        // Check if it's a personal user
+                        database.getPersonalById(userId, (err, personal) => {
+                            if (err || !personal) {
+                                res.writeHead(200, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({
+                                    success: true,
+                                    user: {
+                                        id: userId,
+                                        username: 'admin',
+                                        userType: 'admin',
+                                        needsPasswordChange: true
+                                    },
+                                    isTempSession: true
+                                }));
+                            } else {
+                                // Personal user (store owner/employee)
+                                database.database.get(
+                                    'SELECT boss_id FROM boss WHERE boss_id = ?',
+                                    [userId],
+                                    (err, boss) => {
+                                        let userType = 'store_employee';
+                                        if (boss) {
+                                            userType = 'store_owner';
+                                        }
+
+                                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                                        res.end(JSON.stringify({
+                                            success: true,
+                                            user: {
+                                                id: personal.id,
+                                                firstName: personal.first_name,
+                                                lastName: personal.last_name,
+                                                email: personal.email,
+                                                userType: userType,
+                                                needsPasswordChange: true
+                                            },
+                                            isTempSession: true
+                                        }));
+                                    }
+                                );
+                            }
+                        });
+                    } else {
+                        // Regular user (admin)
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({
+                            success: true,
+                            user: {
+                                id: user.id,
+                                username: user.username,
+                                email: user.email,
+                                userType: user.user_type || 'admin',
+                                needsPasswordChange: true
+                            },
+                            isTempSession: true
+                        }));
+                    }
+                });
+
                 return;
             }
 
+            // Regular session
             const userIdStr = String(userId);
 
-            if (userIdStr.startsWith('client_')) {
+            if (userIdStr === '000000') {
+                // Admin user
+                database.getUserById(userIdStr, (err, user) => {
+                    if (err || !user) {
+                        res.writeHead(404, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ success: false, message: 'User not found' }));
+                    } else {
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({
+                            success: true,
+                            user: {
+                                id: user.id,
+                                username: user.username,
+                                email: user.email,
+                                userType: 'admin'
+                            }
+                        }));
+                    }
+                });
+            }
+            else if (userIdStr.startsWith('client_')) {
                 const clientId = parseInt(userIdStr.replace('client_', ''));
 
                 database.getClientById(clientId, (err, client) => {
@@ -2320,7 +2747,7 @@ const server = http.createServer((req, res) => {
                     }
 
                     database.database.get(
-                        'SELECT boss_id FROM boss WHERE boss_id = $1',
+                        'SELECT boss_id FROM boss WHERE boss_id = ?',
                         [personalId],
                         (err, boss) => {
                             if (err) {
@@ -2330,8 +2757,8 @@ const server = http.createServer((req, res) => {
                             if (boss) {
                                 database.database.all(
                                     `SELECT s.* FROM store s
-                   JOIN works_in_store w ON s.store_id = w.store_id
-                   WHERE w.personal_id = $1`,
+                                     JOIN works_in_store w ON s.store_id = w.store_id
+                                     WHERE w.personal_id = ?`,
                                     [personalId],
                                     (err, stores) => {
                                         if (err) {
@@ -2355,7 +2782,7 @@ const server = http.createServer((req, res) => {
                                 );
                             } else {
                                 database.database.get(
-                                    'SELECT employee_id FROM employees WHERE employee_id = $1',
+                                    'SELECT employee_id FROM employees WHERE employee_id = ?',
                                     [personalId],
                                     (err, employee) => {
                                         if (err) {
@@ -2365,8 +2792,8 @@ const server = http.createServer((req, res) => {
                                         if (employee) {
                                             database.database.all(
                                                 `SELECT s.* FROM store s
-                         JOIN works_in_store w ON s.store_id = w.store_id
-                         WHERE w.personal_id = $1`,
+                                                 JOIN works_in_store w ON s.store_id = w.store_id
+                                                 WHERE w.personal_id = ?`,
                                                 [personalId],
                                                 (err, stores) => {
                                                     if (err) {
@@ -2558,8 +2985,8 @@ const server = http.createServer((req, res) => {
                     const year = new Date().getFullYear().toString().slice(-3);
 
                     database.database.get(
-                        'SELECT COUNT(*) as order_count FROM "order" WHERE store_id = $1 AND EXTRACT(YEAR FROM order_date) = $2',
-                        [storeId, new Date().getFullYear()],
+                        'SELECT COUNT(*) as order_count FROM "order" WHERE store_id = ? AND strftime("%Y", order_date) = ?',
+                        [storeId, new Date().getFullYear().toString()],
                         (err, result) => {
                             if (err) {
                                 console.error('Error counting orders:', err);
@@ -2568,7 +2995,7 @@ const server = http.createServer((req, res) => {
                                 return;
                             }
 
-                            const orderCount = result && result[0] ? parseInt(result[0].order_count) + 1 : 1;
+                            const orderCount = result ? result.order_count + 1 : 1;
                             const orderNumPadded = orderCount.toString().padStart(5, '0');
 
                             // Format order number: storeId + year (3 digits) + orderNum (5 digits)
@@ -2692,8 +3119,8 @@ const server = http.createServer((req, res) => {
                     const year = now.getFullYear().toString().slice(-3);
 
                     database.database.get(
-                        'SELECT COUNT(*) as request_count FROM request WHERE store_id = $1 AND EXTRACT(YEAR FROM date_and_time) = $2 AND EXTRACT(MONTH FROM date_and_time) = $3',
-                        [storeId, now.getFullYear(), now.getMonth() + 1],
+                        'SELECT COUNT(*) as request_count FROM request WHERE store_id = ? AND strftime("%Y", date_and_time) = ? AND strftime("%m", date_and_time) = ?',
+                        [storeId, now.getFullYear().toString(), (now.getMonth() + 1).toString().padStart(2, '0')],
                         (err, result) => {
                             if (err) {
                                 console.error('Error counting requests:', err);
@@ -2702,7 +3129,7 @@ const server = http.createServer((req, res) => {
                                 return;
                             }
 
-                            const requestCount = result && result[0] ? parseInt(result[0].request_count) + 1 : 1;
+                            const requestCount = result ? result.request_count + 1 : 1;
                             const requestSeqPadded = requestCount.toString().padStart(2, '0');
 
                             // Format request number: storeId + month (2 digits) + year (3 digits) + clientId + seq (2 digits)
@@ -2751,23 +3178,23 @@ const server = http.createServer((req, res) => {
                     const clientId = parseInt(userIdStr.replace('client_', ''));
 
                     database.database.get(
-                        'SELECT store_id FROM "order" WHERE order_num = $1',
+                        'SELECT store_id FROM "order" WHERE order_num = ?',
                         [refundData.order_num],
                         (err, result) => {
-                            if (err || !result || result.length === 0) {
+                            if (err || !result) {
                                 res.writeHead(404, { 'Content-Type': 'application/json' });
                                 res.end(JSON.stringify({ success: false, message: 'Order not found' }));
                                 return;
                             }
 
-                            const storeId = result[0].store_id;
+                            const storeId = result.store_id;
                             const now = new Date();
                             const month = (now.getMonth() + 1).toString().padStart(2, '0');
                             const year = now.getFullYear().toString().slice(-3);
 
                             database.database.get(
-                                'SELECT COUNT(*) as refund_count FROM refund WHERE EXTRACT(YEAR FROM request_date) = $1 AND EXTRACT(MONTH FROM request_date) = $2',
-                                [now.getFullYear(), now.getMonth() + 1],
+                                'SELECT COUNT(*) as refund_count FROM refund WHERE strftime("%Y", request_date) = ? AND strftime("%m", request_date) = ?',
+                                [now.getFullYear().toString(), (now.getMonth() + 1).toString().padStart(2, '0')],
                                 (err, result) => {
                                     if (err) {
                                         console.error('Error counting refunds:', err);
@@ -2776,7 +3203,7 @@ const server = http.createServer((req, res) => {
                                         return;
                                     }
 
-                                    const refundCount = result && result[0] ? parseInt(result[0].refund_count) + 1 : 1;
+                                    const refundCount = result ? result.refund_count + 1 : 1;
                                     const refundSeqPadded = refundCount.toString().padStart(2, '0');
 
                                     // Format refund ID: storeId + month (2 digits) + year (3 digits) + seq (2 digits)
@@ -2817,7 +3244,7 @@ const server = http.createServer((req, res) => {
                 const productData = JSON.parse(body);
 
                 database.database.get(
-                    'SELECT store_id FROM works_in_store WHERE personal_id = $1',
+                    'SELECT store_id FROM works_in_store WHERE personal_id = ?',
                     [personalId],
                     (err, bossStore) => {
                         if (err || !bossStore) {
@@ -2835,7 +3262,7 @@ const server = http.createServer((req, res) => {
                         }
 
                         database.database.get(
-                            'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
+                            'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
                             [personalId, storeId],
                             (err, ownsStore) => {
                                 if (err || !ownsStore) {
@@ -2846,7 +3273,7 @@ const server = http.createServer((req, res) => {
 
                                 // FIXED: Changed SQL syntax from SUBSTRING(code FROM 4) to SUBSTR(code, 4) for SQLite compatibility
                                 database.database.get(
-                                    'SELECT MAX(CAST(SUBSTR(code, 4) AS INTEGER)) as max_product_num FROM product WHERE store_id = $1',
+                                    'SELECT MAX(CAST(SUBSTR(code, 4) AS INTEGER)) as max_product_num FROM product WHERE store_id = ?',
                                     [storeId],
                                     (err, result) => {
                                         if (err) {
@@ -2880,7 +3307,6 @@ const server = http.createServer((req, res) => {
                                                 }));
                                             } else {
                                                 database.logAudit(personalId, 'PRODUCT_ADDED', 'product', productId.toString(), 'New product added', ipAddress);
-
                                                 res.writeHead(200, { 'Content-Type': 'application/json' });
                                                 res.end(JSON.stringify({
                                                     success: true,
@@ -2917,7 +3343,7 @@ const server = http.createServer((req, res) => {
                 }
 
                 database.database.get(
-                    'SELECT store_id FROM product WHERE code = $1',
+                    'SELECT store_id FROM product WHERE code = ?',
                     [productData.code],
                     (err, product) => {
                         if (err || !product) {
@@ -2927,7 +3353,7 @@ const server = http.createServer((req, res) => {
                         }
 
                         database.database.get(
-                            'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
+                            'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
                             [personalId, product.store_id],
                             (err, ownsStore) => {
                                 if (err || !ownsStore) {
@@ -3012,80 +3438,212 @@ const server = http.createServer((req, res) => {
         }
 
         let body = '';
+
         req.on('data', chunk => {
             body += chunk.toString();
         });
 
         req.on('end', () => {
-            const { currentPassword, newPassword, confirmPassword } = JSON.parse(body);
+            try {
+                const { newPassword, confirmPassword } = JSON.parse(body);
 
-            if (!currentPassword || !newPassword || !confirmPassword) {
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: false, message: 'All fields are required' }));
-                return;
-            }
-
-            if (newPassword !== confirmPassword) {
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: false, message: 'New passwords do not match' }));
-                return;
-            }
-
-            if (!validatePassword(newPassword)) {
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
-                    success: false,
-                    message: 'Password must have at least 8 characters, including uppercase, lowercase, number and special character'
-                }));
-                return;
-            }
-
-            database.getUserByUsername('admin', (err, user) => {
-                if (err || !user) {
-                    res.writeHead(404, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ success: false, message: 'User not found' }));
+                if (!newPassword || !confirmPassword) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: false, message: 'All fields are required' }));
                     return;
                 }
 
-                database.verifyPassword(currentPassword, user.password, (err, isValid) => {
-                    if (err || !isValid) {
-                        res.writeHead(400, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ success: false, message: 'Current password is incorrect' }));
-                        return;
+                if (newPassword !== confirmPassword) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: false, message: 'New passwords do not match' }));
+                    return;
+                }
+
+                if (!validatePassword(newPassword)) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({
+                        success: false,
+                        message: 'Password must have at least 8 characters, including uppercase, lowercase, number and special character'
+                    }));
+                    return;
+                }
+
+                // First, try to find the user in the users table (for admin)
+                database.getUserById(userId, (err, user) => {
+                    if (err) {
+                        console.error('Error finding user by ID:', err);
                     }
 
-                    database.updatePasswordAndClearForce(userId, newPassword, (err) => {
-                        if (err) {
-                            res.writeHead(500, { 'Content-Type': 'application/json' });
-                            res.end(JSON.stringify({ success: false, message: 'Failed to update password' }));
-                        } else {
-                            tempAdminSessions.delete(sessionId);
+                    if (user) {
+                        // Found in users table (admin or regular user)
+                        console.log('Found user in users table:', user);
 
-                            const newSessionId = generateSessionId();
-                            sessions.set(newSessionId, String(userId));
+                        const hashedPassword = bcrypt.hashSync(newPassword, 10);
 
-                            database.logAudit(userId, 'FORCED_PASSWORD_CHANGE', 'auth', userId.toString(),
-                                'Admin forced password change completed', ipAddress);
+                        database.database.run(
+                            'UPDATE users SET password = ?, force_password_change = 0 WHERE id = ?',
+                            [hashedPassword, userId],
+                            function(err) {
+                                if (err) {
+                                    console.error('Error updating password:', err);
+                                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                                    res.end(JSON.stringify({ success: false, message: 'Failed to update password' }));
+                                    return;
+                                }
 
-                            res.writeHead(200, {
-                                'Content-Type': 'application/json',
-                                'Set-Cookie': `sessionId=${newSessionId}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict`
-                            });
-                            res.end(JSON.stringify({
-                                success: true,
-                                message: 'Password changed successfully. You can now access the dashboard.',
-                                redirectTo: 'admin.html'
-                            }));
-                        }
-                    });
+                                // Also update password in personal table if it exists (for admin)
+                                database.database.run(
+                                    'UPDATE personal SET password = ? WHERE id = ?',
+                                    [hashedPassword, userId],
+                                    function(err) {
+                                        if (err) {
+                                            console.log('No personal record to update for ID:', userId);
+                                        }
+                                    }
+                                );
+
+                                // Clear temp session
+                                tempAdminSessions.delete(sessionId);
+
+                                // Create new permanent session
+                                const newSessionId = generateSessionId();
+                                sessions.set(newSessionId, String(userId));
+
+                                // Determine redirect based on user type
+                                let redirectTo = 'dashboard.html';
+
+                                if (user.username === 'admin' || user.user_type === 'admin') {
+                                    redirectTo = 'admin.html';
+                                } else if (user.user_type === 'store_owner') {
+                                    redirectTo = 'store-owner.html';
+                                } else if (user.user_type === 'store_employee') {
+                                    redirectTo = 'store-employee.html';
+                                } else if (user.user_type === 'client') {
+                                    redirectTo = 'client-dashboard.html';
+                                }
+
+                                console.log(`Password changed successfully for user ${userId}, redirecting to ${redirectTo}`);
+
+                                database.logAudit(userId, 'FORCED_PASSWORD_CHANGE', 'auth', userId.toString(),
+                                    `${user.user_type || 'user'} forced password change completed`, ipAddress);
+
+                                // Set the cookie with proper options
+                                res.writeHead(200, {
+                                    'Content-Type': 'application/json',
+                                    'Set-Cookie': `sessionId=${newSessionId}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict`
+                                });
+                                res.end(JSON.stringify({
+                                    success: true,
+                                    message: 'Password changed successfully.',
+                                    redirectTo: redirectTo,
+                                    userType: user.user_type || 'user'
+                                }));
+                            }
+                        );
+                    } else {
+                        // Not found in users table, check personal table (for store owners/employees)
+                        console.log('User not found in users table, checking personal table for ID:', userId);
+
+                        database.getPersonalById(userId, (err, personal) => {
+                            if (err) {
+                                console.error('Error finding personal by ID:', err);
+                            }
+
+                            if (personal) {
+                                console.log('Found user in personal table:', personal);
+
+                                // Update password in personal table
+                                const hashedPassword = bcrypt.hashSync(newPassword, 10);
+
+                                database.database.run(
+                                    'UPDATE personal SET password = ? WHERE id = ?',
+                                    [hashedPassword, userId],
+                                    function(err) {
+                                        if (err) {
+                                            console.error('Error updating personal password:', err);
+                                            res.writeHead(500, { 'Content-Type': 'application/json' });
+                                            res.end(JSON.stringify({ success: false, message: 'Failed to update password' }));
+                                            return;
+                                        }
+
+                                        // Also update in users table if exists
+                                        database.database.run(
+                                            'UPDATE users SET password = ?, force_password_change = 0 WHERE email = ?',
+                                            [hashedPassword, personal.email],
+                                            function(err) {
+                                                if (err) {
+                                                    console.log('No users record to update for email:', personal.email);
+                                                }
+                                            }
+                                        );
+
+                                        // Determine user type (boss/owner or employee)
+                                        database.database.get(
+                                            'SELECT boss_id FROM boss WHERE boss_id = ?',
+                                            [userId],
+                                            (err, boss) => {
+                                                let userType = 'store_employee';
+                                                let redirectTo = 'store-employee.html';
+
+                                                if (boss) {
+                                                    userType = 'store_owner';
+                                                    redirectTo = 'store-owner.html';
+                                                }
+
+                                                // Clear temp session
+                                                tempAdminSessions.delete(sessionId);
+
+                                                // Create new permanent session
+                                                const newSessionId = generateSessionId();
+                                                sessions.set(newSessionId, `personal_${userId}`);
+
+                                                console.log(`Password changed successfully for ${userType} ${userId}, redirecting to ${redirectTo}`);
+
+                                                database.logAudit(userId, 'FORCED_PASSWORD_CHANGE', 'auth', userId.toString(),
+                                                    `${userType} forced password change completed`, ipAddress);
+
+                                                // Set the cookie with proper options
+                                                res.writeHead(200, {
+                                                    'Content-Type': 'application/json',
+                                                    'Set-Cookie': `sessionId=${newSessionId}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict`
+                                                });
+                                                res.end(JSON.stringify({
+                                                    success: true,
+                                                    message: 'Password changed successfully.',
+                                                    redirectTo: redirectTo,
+                                                    userType: userType
+                                                }));
+                                            }
+                                        );
+                                    }
+                                );
+                            } else {
+                                // User not found in any table
+                                console.error('User not found in any table with ID:', userId);
+                                res.writeHead(404, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({ success: false, message: 'User not found' }));
+                            }
+                        });
+                    }
                 });
-            });
+            } catch (parseError) {
+                console.error('JSON parse error:', parseError);
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, message: 'Invalid request format' }));
+            }
         });
     }
 
     else if (pathname === '/api/register-employee' && req.method === 'POST') {
         requireAuth(req, res, (userId) => {
             const userIdStr = String(userId);
+
+            // Check if this is the admin user
+            if (userIdStr === '000000') {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, message: 'Only store owners can register employees' }));
+                return;
+            }
 
             if (!userIdStr.startsWith('personal_')) {
                 res.writeHead(403, { 'Content-Type': 'application/json' });
@@ -3096,7 +3654,7 @@ const server = http.createServer((req, res) => {
             const personalId = userIdStr.replace('personal_', '');
 
             database.database.get(
-                'SELECT boss_id FROM boss WHERE boss_id = $1',
+                'SELECT boss_id FROM boss WHERE boss_id = ?',
                 [personalId],
                 (err, boss) => {
                     if (err || !boss) {
@@ -3203,7 +3761,7 @@ const server = http.createServer((req, res) => {
                                         }
 
                                         database.database.run(
-                                            'INSERT INTO personal (id, first_name, last_name, ssn, email, password) VALUES ($1, $2, $3, $4, $5, $6)',
+                                            'INSERT INTO personal (id, first_name, last_name, ssn, email, password) VALUES (?, ?, ?, ?, ?, ?)',
                                             [
                                                 newPersonalId,
                                                 firstName,
@@ -3227,7 +3785,7 @@ const server = http.createServer((req, res) => {
                                                 }
 
                                                 database.database.run(
-                                                    'INSERT INTO employees (employee_id, date_of_hire) VALUES ($1, $2)',
+                                                    'INSERT INTO employees (employee_id, date_of_hire) VALUES (?, ?)',
                                                     [newPersonalId, dateOfHire],
                                                     (err) => {
                                                         if (err) {
@@ -3239,7 +3797,7 @@ const server = http.createServer((req, res) => {
                                                         }
 
                                                         database.database.run(
-                                                            'INSERT INTO works_in_store (personal_id, store_id) VALUES ($1, $2)',
+                                                            'INSERT INTO works_in_store (personal_id, store_id) VALUES (?, ?)',
                                                             [newPersonalId, storeId],
                                                             (err) => {
                                                                 if (err) {
@@ -3251,7 +3809,7 @@ const server = http.createServer((req, res) => {
                                                                 }
 
                                                                 database.database.run(
-                                                                    'INSERT INTO permissions (personal_id, type, authorisation) VALUES ($1, $2, $3)',
+                                                                    'INSERT INTO permissions (personal_id, type, authorisation) VALUES (?, ?, ?)',
                                                                     [newPersonalId, 'EMPLOYEE', 'limited_access'],
                                                                     (err) => {
                                                                         if (err) {
@@ -3299,6 +3857,13 @@ const server = http.createServer((req, res) => {
         requireAuth(req, res, (userId) => {
             const userIdStr = String(userId);
 
+            // Check if this is the admin user
+            if (userIdStr === '000000') {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, message: 'Only store owners can delete employees' }));
+                return;
+            }
+
             if (!userIdStr.startsWith('personal_')) {
                 res.writeHead(403, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: false, message: 'Only store owners can delete employees' }));
@@ -3308,7 +3873,7 @@ const server = http.createServer((req, res) => {
             const personalId = userIdStr.replace('personal_', '');
 
             database.database.get(
-                'SELECT boss_id FROM boss WHERE boss_id = $1',
+                'SELECT boss_id FROM boss WHERE boss_id = ?',
                 [personalId],
                 (err, boss) => {
                     if (err || !boss) {
@@ -3332,7 +3897,7 @@ const server = http.createServer((req, res) => {
                         }
 
                         database.database.get(
-                            'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
+                            'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
                             [personalId, storeId],
                             (err, bossStore) => {
                                 if (err || !bossStore) {
@@ -3342,7 +3907,7 @@ const server = http.createServer((req, res) => {
                                 }
 
                                 database.database.get(
-                                    'SELECT personal_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
+                                    'SELECT personal_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
                                     [employeeId, storeId],
                                     (err, employeeStore) => {
                                         if (err || !employeeStore) {
@@ -3352,7 +3917,7 @@ const server = http.createServer((req, res) => {
                                         }
 
                                         database.database.get(
-                                            'SELECT boss_id FROM boss WHERE boss_id = $1',
+                                            'SELECT boss_id FROM boss WHERE boss_id = ?',
                                             [employeeId],
                                             (err, isBoss) => {
                                                 if (err) {
@@ -3374,7 +3939,7 @@ const server = http.createServer((req, res) => {
                                                     }
 
                                                     database.database.run(
-                                                        'DELETE FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
+                                                        'DELETE FROM works_in_store WHERE personal_id = ? AND store_id = ?',
                                                         [employeeId, storeId],
                                                         (err) => {
                                                             if (err) {
@@ -3386,7 +3951,7 @@ const server = http.createServer((req, res) => {
                                                             }
 
                                                             database.database.run(
-                                                                'DELETE FROM employees WHERE employee_id = $1',
+                                                                'DELETE FROM employees WHERE employee_id = ?',
                                                                 [employeeId],
                                                                 (err) => {
                                                                     if (err) {
@@ -3394,7 +3959,7 @@ const server = http.createServer((req, res) => {
                                                                     }
 
                                                                     database.database.run(
-                                                                        'DELETE FROM permissions WHERE personal_id = $1',
+                                                                        'DELETE FROM permissions WHERE personal_id = ?',
                                                                         [employeeId],
                                                                         (err) => {
                                                                             if (err) {
@@ -3402,7 +3967,7 @@ const server = http.createServer((req, res) => {
                                                                             }
 
                                                                             database.database.run(
-                                                                                'DELETE FROM personal WHERE id = $1',
+                                                                                'DELETE FROM personal WHERE id = ?',
                                                                                 [employeeId],
                                                                                 (err) => {
                                                                                     if (err) {
@@ -3451,6 +4016,13 @@ const server = http.createServer((req, res) => {
         requireAuth(req, res, (userId) => {
             const userIdStr = String(userId);
 
+            // Check if this is the admin user
+            if (userIdStr === '000000') {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, message: 'Only store owners can update employee status' }));
+                return;
+            }
+
             if (!userIdStr.startsWith('personal_')) {
                 res.writeHead(403, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: false, message: 'Only store owners can update employee status' }));
@@ -3460,7 +4032,7 @@ const server = http.createServer((req, res) => {
             const personalId = userIdStr.replace('personal_', '');
 
             database.database.get(
-                'SELECT boss_id FROM boss WHERE boss_id = $1',
+                'SELECT boss_id FROM boss WHERE boss_id = ?',
                 [personalId],
                 (err, boss) => {
                     if (err || !boss) {
@@ -3484,7 +4056,7 @@ const server = http.createServer((req, res) => {
                         }
 
                         database.database.get(
-                            'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
+                            'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
                             [personalId, storeId],
                             (err, bossStore) => {
                                 if (err || !bossStore) {
@@ -3494,7 +4066,7 @@ const server = http.createServer((req, res) => {
                                 }
 
                                 database.database.get(
-                                    'SELECT personal_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
+                                    'SELECT personal_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
                                     [employeeId, storeId],
                                     (err, employeeStore) => {
                                         if (err || !employeeStore) {
@@ -3518,7 +4090,7 @@ const server = http.createServer((req, res) => {
                                         }
 
                                         database.database.run(
-                                            'UPDATE permissions SET type = $1, authorisation = $2 WHERE personal_id = $3',
+                                            'UPDATE permissions SET type = ?, authorisation = ? WHERE personal_id = ?',
                                             [permissionType, authorization, employeeId],
                                             function(err) {
                                                 if (err) {
@@ -3551,6 +4123,13 @@ const server = http.createServer((req, res) => {
         requireAuth(req, res, (userId) => {
             const userIdStr = String(userId);
 
+            // Check if this is the admin user
+            if (userIdStr === '000000') {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, message: 'Only store owners can update employees' }));
+                return;
+            }
+
             if (!userIdStr.startsWith('personal_')) {
                 res.writeHead(403, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: false, message: 'Only store owners can update employees' }));
@@ -3560,7 +4139,7 @@ const server = http.createServer((req, res) => {
             const personalId = userIdStr.replace('personal_', '');
 
             database.database.get(
-                'SELECT boss_id FROM boss WHERE boss_id = $1',
+                'SELECT boss_id FROM boss WHERE boss_id = ?',
                 [personalId],
                 (err, boss) => {
                     if (err || !boss) {
@@ -3584,7 +4163,7 @@ const server = http.createServer((req, res) => {
                         }
 
                         database.database.get(
-                            'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
+                            'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
                             [personalId, storeId],
                             (err, bossStore) => {
                                 if (err || !bossStore) {
@@ -3594,7 +4173,7 @@ const server = http.createServer((req, res) => {
                                 }
 
                                 database.database.get(
-                                    'SELECT personal_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
+                                    'SELECT personal_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
                                     [employeeId, storeId],
                                     (err, employeeStore) => {
                                         if (err || !employeeStore) {
@@ -3607,12 +4186,12 @@ const server = http.createServer((req, res) => {
                                         const params = [];
 
                                         if (firstName) {
-                                            updates.push('first_name = $' + (params.length + 1));
+                                            updates.push('first_name = ?');
                                             params.push(firstName);
                                         }
 
                                         if (lastName) {
-                                            updates.push('last_name = $' + (params.length + 1));
+                                            updates.push('last_name = ?');
                                             params.push(lastName);
                                         }
 
@@ -3622,7 +4201,7 @@ const server = http.createServer((req, res) => {
                                                 res.end(JSON.stringify({ success: false, message: 'Invalid email format' }));
                                                 return;
                                             }
-                                            updates.push('email = $' + (params.length + 1));
+                                            updates.push('email = ?');
                                             params.push(email);
                                         }
 
@@ -3635,7 +4214,7 @@ const server = http.createServer((req, res) => {
                                         params.push(employeeId);
 
                                         database.database.run(
-                                            `UPDATE personal SET ${updates.join(', ')} WHERE id = $${params.length}`,
+                                            `UPDATE personal SET ${updates.join(', ')} WHERE id = ?`,
                                             params,
                                             function(err) {
                                                 if (err) {
@@ -3670,7 +4249,7 @@ const server = http.createServer((req, res) => {
 
             if (!storeId) {
                 database.database.get(
-                    'SELECT store_id FROM works_in_store WHERE personal_id = $1 LIMIT 1',
+                    'SELECT store_id FROM works_in_store WHERE personal_id = ? LIMIT 1',
                     [personalId],
                     (err, store) => {
                         if (err || !store) {
@@ -3690,11 +4269,12 @@ const server = http.createServer((req, res) => {
                         });
                     }
                 );
+
                 return;
             }
 
             database.database.get(
-                'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
+                'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
                 [personalId, storeId],
                 (err, ownsStore) => {
                     if (err || !ownsStore) {
@@ -3723,7 +4303,7 @@ const server = http.createServer((req, res) => {
 
             if (!storeId) {
                 database.database.get(
-                    'SELECT store_id FROM works_in_store WHERE personal_id = $1 LIMIT 1',
+                    'SELECT store_id FROM works_in_store WHERE personal_id = ? LIMIT 1',
                     [personalId],
                     (err, store) => {
                         if (err || !store) {
@@ -3743,11 +4323,12 @@ const server = http.createServer((req, res) => {
                         });
                     }
                 );
+
                 return;
             }
 
             database.database.get(
-                'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
+                'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
                 [personalId, storeId],
                 (err, ownsStore) => {
                     if (err || !ownsStore) {
@@ -3776,7 +4357,7 @@ const server = http.createServer((req, res) => {
 
             if (!storeId) {
                 database.database.get(
-                    'SELECT store_id FROM works_in_store WHERE personal_id = $1 LIMIT 1',
+                    'SELECT store_id FROM works_in_store WHERE personal_id = ? LIMIT 1',
                     [personalId],
                     (err, store) => {
                         if (err || !store) {
@@ -3796,11 +4377,12 @@ const server = http.createServer((req, res) => {
                         });
                     }
                 );
+
                 return;
             }
 
             database.database.get(
-                'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
+                'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
                 [personalId, storeId],
                 (err, ownsStore) => {
                     if (err || !ownsStore) {
@@ -3829,7 +4411,7 @@ const server = http.createServer((req, res) => {
 
             if (!storeId) {
                 database.database.get(
-                    'SELECT store_id FROM works_in_store WHERE personal_id = $1 LIMIT 1',
+                    'SELECT store_id FROM works_in_store WHERE personal_id = ? LIMIT 1',
                     [personalId],
                     (err, store) => {
                         if (err || !store) {
@@ -3849,11 +4431,12 @@ const server = http.createServer((req, res) => {
                         });
                     }
                 );
+
                 return;
             }
 
             database.database.get(
-                'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
+                'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
                 [personalId, storeId],
                 (err, ownsStore) => {
                     if (err || !ownsStore) {
@@ -3882,7 +4465,7 @@ const server = http.createServer((req, res) => {
 
             if (!storeId) {
                 database.database.get(
-                    'SELECT store_id FROM works_in_store WHERE personal_id = $1 LIMIT 1',
+                    'SELECT store_id FROM works_in_store WHERE personal_id = ? LIMIT 1',
                     [personalId],
                     (err, store) => {
                         if (err || !store) {
@@ -3902,11 +4485,12 @@ const server = http.createServer((req, res) => {
                         });
                     }
                 );
+
                 return;
             }
 
             database.database.get(
-                'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
+                'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
                 [personalId, storeId],
                 (err, ownsStore) => {
                     if (err || !ownsStore) {
@@ -3932,6 +4516,13 @@ const server = http.createServer((req, res) => {
     else if (pathname === '/api/employee-tasks' && req.method === 'GET') {
         requireAuth(req, res, (userId) => {
             const userIdStr = String(userId);
+
+            // Check if this is the admin user
+            if (userIdStr === '000000') {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, message: 'Only store employees can access this endpoint' }));
+                return;
+            }
 
             if (!userIdStr.startsWith('personal_')) {
                 res.writeHead(403, { 'Content-Type': 'application/json' });
@@ -4001,7 +4592,7 @@ const server = http.createServer((req, res) => {
                 }
 
                 database.database.get(
-                    'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
+                    'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
                     [personalId, storeId],
                     (err, ownsStore) => {
                         if (err || !ownsStore) {
@@ -4071,7 +4662,7 @@ const server = http.createServer((req, res) => {
                 }
 
                 database.database.get(
-                    'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
+                    'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
                     [personalId, storeId],
                     (err, ownsStore) => {
                         if (err || !ownsStore) {
@@ -4083,7 +4674,7 @@ const server = http.createServer((req, res) => {
                         const reportId = 'RPT' + Date.now().toString().slice(-6);
 
                         database.database.run(
-                            'INSERT INTO report (id, store_id, period, start_date, end_date, type, generated_by, generated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)',
+                            'INSERT INTO report (id, store_id, period, start_date, end_date, type, generated_by, generated_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
                             [reportId, storeId, period, startDate, endDate, type, personalId],
                             function(err) {
                                 if (err) {
