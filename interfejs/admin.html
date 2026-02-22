@@ -17,6 +17,8 @@
       <li><a href="index.html">Home</a></li>
       <li><a href="products.html">Products</a></li>
       <li><a href="#" id="dashboard-link" class="active">Admin</a></li>
+      <li><a href="change-password.html" class="change-password-btn">🔑 Change Password</a></li>
+      <li><a href="#" id="logout-link">Logout</a></li>
     </ul>
   </nav>
 </header>
@@ -200,6 +202,7 @@
 <script>
   document.addEventListener('DOMContentLoaded', async () => {
     const user = await loadUserData();
+
     if (!user || user.userType !== 'admin') {
       window.location.href = 'index.html';
       return;
@@ -207,11 +210,18 @@
 
     document.getElementById('admin-name').textContent = user.username || 'Administrator';
 
+    // Logout functionality
+    document.getElementById('logout-link').addEventListener('click', async (e) => {
+      e.preventDefault();
+      await logout();
+    });
+
     // Tab switching
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
         btn.classList.add('active');
         document.getElementById(`${btn.dataset.tab}-tab`).classList.add('active');
 
@@ -270,18 +280,19 @@
       const data = await response.json();
 
       const tbody = document.getElementById('users-list');
+
       if (data.success && data.users.length > 0) {
         tbody.innerHTML = data.users.map(user => `
-                        <tr>
-                            <td>${user.id || user.client_id || 'N/A'}</td>
-                            <td>${user.firstName || user.first_name || user.username || 'N/A'} ${user.lastName || user.last_name || ''}</td>
-                            <td>${user.email || 'N/A'}</td>
-                            <td><span class="status-badge status-${user.user_type || user.userType || 'unknown'}">${user.user_type || user.userType || 'unknown'}</span></td>
-                            <td>
-                                <button class="btn-small" onclick="viewUser('${user.id || user.client_id}')">View</button>
-                            </td>
-                        </tr>
-                    `).join('');
+                    <tr>
+                        <td>${user.id || user.client_id || 'N/A'}</td>
+                        <td>${user.firstName || user.first_name || user.username || 'N/A'} ${user.lastName || user.last_name || ''}</td>
+                        <td>${user.email || 'N/A'}</td>
+                        <td><span class="status-badge status-${user.user_type || user.userType || 'unknown'}">${user.user_type || user.userType || 'unknown'}</span></td>
+                        <td>
+                            <button class="btn-small" onclick="viewUser('${user.id || user.client_id}')">View</button>
+                        </td>
+                    </tr>
+                `).join('');
       } else {
         tbody.innerHTML = '<tr><td colspan="5">No users found</td></tr>';
       }
@@ -297,18 +308,19 @@
       const data = await response.json();
 
       const tbody = document.getElementById('stores-list');
+
       if (data.success && data.stores.length > 0) {
         tbody.innerHTML = data.stores.map(store => `
-                        <tr>
-                            <td>${store.store_id}</td>
-                            <td>${store.name}</td>
-                            <td>${store.store_email}</td>
-                            <td>${store.rating || '0.0'}</td>
-                            <td>
-                                <button class="btn-small" onclick="viewStore('${store.store_id}')">View</button>
-                            </td>
-                        </tr>
-                    `).join('');
+                    <tr>
+                        <td>${store.store_id}</td>
+                        <td>${store.name}</td>
+                        <td>${store.store_email}</td>
+                        <td>${store.rating || '0.0'}</td>
+                        <td>
+                            <button class="btn-small" onclick="viewStore('${store.store_id}')">View</button>
+                        </td>
+                    </tr>
+                `).join('');
       } else {
         tbody.innerHTML = '<tr><td colspan="5">No stores found</td></tr>';
       }
@@ -324,17 +336,18 @@
       const data = await response.json();
 
       const tbody = document.getElementById('orders-list');
+
       if (data.success && data.orders.length > 0) {
         tbody.innerHTML = data.orders.map(order => `
-                        <tr>
-                            <td>${order.order_num}</td>
-                            <td>${order.first_name} ${order.last_name}</td>
-                            <td>${order.store_name}</td>
-                            <td>${new Date(order.order_date).toLocaleDateString()}</td>
-                            <td><span class="status-badge status-${order.status}">${order.status}</span></td>
-                            <td>$${parseFloat(order.total || 0).toFixed(2)}</td>
-                        </tr>
-                    `).join('');
+                    <tr>
+                        <td>${order.order_num}</td>
+                        <td>${order.first_name} ${order.last_name}</td>
+                        <td>${order.store_name}</td>
+                        <td>${new Date(order.order_date).toLocaleDateString()}</td>
+                        <td><span class="status-badge status-${order.status}">${order.status}</span></td>
+                        <td>$${parseFloat(order.total || 0).toFixed(2)}</td>
+                    </tr>
+                `).join('');
       } else {
         tbody.innerHTML = '<tr><td colspan="6">No orders found</td></tr>';
       }
@@ -361,23 +374,23 @@
 
     // Mock report generation
     document.getElementById('report-results').innerHTML = `
-                <div class="dashboard-section">
-                    <h4>Generated Report: ${type}</h4>
-                    <p>Period: ${start} to ${end}</p>
-                    <div class="loading">Generating report...</div>
-                </div>
-            `;
+            <div class="dashboard-section">
+                <h4>Generated Report: ${type}</h4>
+                <p>Period: ${start} to ${end}</p>
+                <div class="loading">Generating report...</div>
+            </div>
+        `;
 
     // Simulate report generation
     setTimeout(() => {
       document.getElementById('report-results').innerHTML = `
-                    <div class="dashboard-section">
-                        <h4>Report Results</h4>
-                        <p><strong>Total Records:</strong> 42</p>
-                        <p><strong>Summary:</strong> Sample report data for demonstration</p>
-                        <button class="btn-small" onclick="downloadReport()">Download Report</button>
-                    </div>
-                `;
+                <div class="dashboard-section">
+                    <h4>Report Results</h4>
+                    <p><strong>Total Records:</strong> 42</p>
+                    <p><strong>Summary:</strong> Sample report data for demonstration</p>
+                    <button class="btn-small" onclick="downloadReport()">Download Report</button>
+                </div>
+            `;
     }, 1500);
   }
 

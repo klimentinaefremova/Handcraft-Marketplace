@@ -9,6 +9,7 @@ const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
 const port = process.env.PORT || 3000;
+
 const sessions = new Map();
 const verificationCodes = new Map();
 const tempUsers = new Map();
@@ -30,7 +31,9 @@ if (process.env.SMTP_USER && process.env.SMTP_PASS) {
             pass: process.env.SMTP_PASS
         }
     };
+
     emailTransporter = nodemailer.createTransport(emailConfig);
+
     emailTransporter.verify(function(error, success) {
         if (error) {
             console.log('❌ Email configuration failed:', error.message);
@@ -51,6 +54,7 @@ function createMockTransporter() {
             return new Promise((resolve, reject) => {
                 const codeMatch = mailOptions.html.match(/\b\d{6}\b/);
                 const code = codeMatch ? codeMatch[0] : 'unknown';
+
                 console.log('');
                 console.log('🎯 ===== VERIFICATION CODE =====');
                 console.log('📧 For:', mailOptions.to);
@@ -59,6 +63,7 @@ function createMockTransporter() {
                 console.log('📝 Use this code to continue');
                 console.log('================================');
                 console.log('');
+
                 resolve({ messageId: 'dev-' + Date.now() });
             });
         }
@@ -931,9 +936,9 @@ function insertInitialData() {
                         console.error(`Error inserting role ${role.name}:`, err.message);
                     }
                     rolesInserted++;
+
                     if (rolesInserted === roles.length) {
                         console.log('✅ Roles inserted');
-
                         // Create admin user with ID 000000
                         createAdminUser();
 
@@ -1150,6 +1155,7 @@ const server = http.createServer((req, res) => {
             } else if (userId.startsWith('personal_')) {
                 // Check if store owner or employee
                 const personalId = userId.replace('personal_', '');
+
                 database.database.get(
                     'SELECT boss_id FROM boss WHERE boss_id = ?',
                     [personalId],
@@ -1200,7 +1206,6 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => {
             body += chunk.toString();
         });
-
         req.on('end', () => {
             const { username, email, password, userType, firstName, lastName } = JSON.parse(body);
 
@@ -1265,7 +1270,6 @@ const server = http.createServer((req, res) => {
                         .then(() => {
                             console.log('✅ Verification email sent to:', email);
                             database.logAudit(null, 'REGISTER_ATTEMPT', 'user', null, `Registration attempt for ${email} as ${userType}`, ipAddress);
-
                             res.writeHead(200, { 'Content-Type': 'application/json' });
                             res.end(JSON.stringify({
                                 success: true,
@@ -1293,7 +1297,6 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => {
             body += chunk.toString();
         });
-
         req.on('end', () => {
             const formData = JSON.parse(body);
 
@@ -1324,6 +1327,7 @@ const server = http.createServer((req, res) => {
             }
 
             const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
             if (!emailRegex.test(formData.ownerEmail)) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({
@@ -1405,6 +1409,7 @@ const server = http.createServer((req, res) => {
 
                                 // Next store number is max + 1, starting from 1 if no stores exist
                                 let nextStoreNumber = 1;
+
                                 if (result && result.max_store_num) {
                                     // Extract numeric part from store_id (format: XXX)
                                     const maxNum = parseInt(result.max_store_num, 10);
@@ -1460,7 +1465,6 @@ const server = http.createServer((req, res) => {
                                     .then(() => {
                                         console.log('✅ Store registration email sent to:', formData.ownerEmail);
                                         database.logAudit(null, 'STORE_REGISTER_ATTEMPT', 'store', null, `Store registration attempt: ${formData.storeName}`, ipAddress);
-
                                         res.writeHead(200, { 'Content-Type': 'application/json' });
                                         res.end(JSON.stringify({
                                             success: true,
@@ -1493,7 +1497,6 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => {
             body += chunk.toString();
         });
-
         req.on('end', () => {
             const { firstName, lastName, email, password, address, city, postcode, country, isDefaultAddress } = JSON.parse(body);
 
@@ -1558,7 +1561,6 @@ const server = http.createServer((req, res) => {
                     .then(() => {
                         console.log('✅ Verification email sent to:', email);
                         database.logAudit(null, 'CLIENT_REGISTER_ATTEMPT', 'client', null, `Client registration attempt for ${email}`, ipAddress);
-
                         res.writeHead(200, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({
                             success: true,
@@ -1585,7 +1587,6 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => {
             body += chunk.toString();
         });
-
         req.on('end', () => {
             const { email } = JSON.parse(body);
 
@@ -1720,7 +1721,6 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => {
             body += chunk.toString();
         });
-
         req.on('end', () => {
             const { email, code } = JSON.parse(body);
 
@@ -1792,6 +1792,7 @@ const server = http.createServer((req, res) => {
                                     if (err) {
                                         database.database.run('ROLLBACK');
                                         console.error('Error inserting personal:', err);
+
                                         if (err.code === '23505') {
                                             res.writeHead(400, { 'Content-Type': 'application/json' });
                                             res.end(JSON.stringify({
@@ -1840,38 +1841,56 @@ const server = http.createServer((req, res) => {
                                                                 console.error('Error inserting permissions:', err);
                                                             }
 
-                                                            database.database.run('COMMIT', (commitErr) => {
-                                                                if (commitErr) {
-                                                                    console.error('Error committing transaction:', commitErr);
-                                                                    database.database.run('ROLLBACK');
-                                                                    res.writeHead(500, { 'Content-Type': 'application/json' });
-                                                                    res.end(JSON.stringify({ success: false, message: 'Error completing registration' }));
-                                                                    return;
+                                                            // Also create entry in users table for login with force_password_change = 1
+                                                            database.database.run(
+                                                                'INSERT INTO users (id, username, email, password, user_type, force_password_change) VALUES (?, ?, ?, ?, ?, ?)',
+                                                                [
+                                                                    tempStoreData.personalId,
+                                                                    `${tempStoreData.ownerFirstName} ${tempStoreData.ownerLastName}`,
+                                                                    tempStoreData.ownerEmail,
+                                                                    bcrypt.hashSync(tempStoreData.password, 10),
+                                                                    'store_owner',
+                                                                    1
+                                                                ],
+                                                                (err) => {
+                                                                    if (err) {
+                                                                        console.error('Error creating user entry for store owner:', err);
+                                                                    }
+
+                                                                    database.database.run('COMMIT', (commitErr) => {
+                                                                        if (commitErr) {
+                                                                            console.error('Error committing transaction:', commitErr);
+                                                                            database.database.run('ROLLBACK');
+                                                                            res.writeHead(500, { 'Content-Type': 'application/json' });
+                                                                            res.end(JSON.stringify({ success: false, message: 'Error completing registration' }));
+                                                                            return;
+                                                                        }
+
+                                                                        tempStoreRegistrations.delete(code);
+                                                                        verificationCodes.delete(email);
+
+                                                                        console.log(`✅ Store registration completed successfully:`);
+                                                                        console.log(`   Store ID: ${tempStoreData.storeId}`);
+                                                                        console.log(`   Store Name: ${tempStoreData.storeName}`);
+                                                                        console.log(`   Personal ID: ${tempStoreData.personalId}`);
+                                                                        console.log(`   Owner: ${tempStoreData.ownerFirstName} ${tempStoreData.ownerLastName}`);
+
+                                                                        database.logAudit(tempStoreData.personalId, 'STORE_REGISTER_SUCCESS', 'store', tempStoreData.storeId, `Store registered: ${tempStoreData.storeName}`, ipAddress);
+
+                                                                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                                                                        res.end(JSON.stringify({
+                                                                            success: true,
+                                                                            message: 'Store registration successful! You can now login.',
+                                                                            storeId: tempStoreData.storeId,
+                                                                            storeIdPadded: tempStoreData.storeIdPadded,
+                                                                            storeName: tempStoreData.storeName,
+                                                                            personalId: tempStoreData.personalId,
+                                                                            userType: 'store_owner',
+                                                                            redirectTo: 'login.html'
+                                                                        }));
+                                                                    });
                                                                 }
-
-                                                                tempStoreRegistrations.delete(code);
-                                                                verificationCodes.delete(email);
-
-                                                                console.log(`✅ Store registration completed successfully:`);
-                                                                console.log(`   Store ID: ${tempStoreData.storeId}`);
-                                                                console.log(`   Store Name: ${tempStoreData.storeName}`);
-                                                                console.log(`   Personal ID: ${tempStoreData.personalId}`);
-                                                                console.log(`   Owner: ${tempStoreData.ownerFirstName} ${tempStoreData.ownerLastName}`);
-
-                                                                database.logAudit(tempStoreData.personalId, 'STORE_REGISTER_SUCCESS', 'store', tempStoreData.storeId, `Store registered: ${tempStoreData.storeName}`, ipAddress);
-
-                                                                res.writeHead(200, { 'Content-Type': 'application/json' });
-                                                                res.end(JSON.stringify({
-                                                                    success: true,
-                                                                    message: 'Store registration successful! You can now login.',
-                                                                    storeId: tempStoreData.storeId,
-                                                                    storeIdPadded: tempStoreData.storeIdPadded,
-                                                                    storeName: tempStoreData.storeName,
-                                                                    personalId: tempStoreData.personalId,
-                                                                    userType: 'store_owner',
-                                                                    redirectTo: 'login.html'
-                                                                }));
-                                                            });
+                                                            );
                                                         }
                                                     );
                                                 }
@@ -1951,6 +1970,7 @@ const server = http.createServer((req, res) => {
                 });
             } else {
                 const userId = 'user_' + Date.now().toString().slice(-8);
+
                 database.createUser(userId, tempUserData.username, tempUserData.email, tempUserData.password, tempUserData.userType, (err, userId) => {
                     if (err) {
                         console.error('Error creating user:', err);
@@ -1981,7 +2001,6 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => {
             body += chunk.toString();
         });
-
         req.on('end', () => {
             const { email, password } = JSON.parse(body);
 
@@ -2002,7 +2021,6 @@ const server = http.createServer((req, res) => {
                         const isFirstTimeLogin = adminUser.force_password_change === 1;
 
                         const twoFACode = generateVerificationCode();
-
                         verificationCodes.set(adminUser.email, {
                             code: twoFACode,
                             timestamp: Date.now(),
@@ -2047,6 +2065,7 @@ const server = http.createServer((req, res) => {
                         res.end(JSON.stringify({ success: false, message: 'Invalid email or password' }));
                     }
                 });
+
                 return;
             }
 
@@ -2093,6 +2112,7 @@ const server = http.createServer((req, res) => {
                             'Content-Type': 'application/json',
                             'Set-Cookie': `sessionId=${sessionId}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict`
                         });
+
                         res.end(JSON.stringify({
                             success: true,
                             message: 'Successfully logged in',
@@ -2154,7 +2174,6 @@ const server = http.createServer((req, res) => {
                                                 const isFirstTimeLogin = user && user.force_password_change === 1;
 
                                                 const twoFACode = generateVerificationCode();
-
                                                 verificationCodes.set(personal.email, {
                                                     code: twoFACode,
                                                     timestamp: Date.now(),
@@ -2215,7 +2234,6 @@ const server = http.createServer((req, res) => {
                                                         const isFirstTimeLogin = user && user.force_password_change === 1;
 
                                                         const twoFACode = generateVerificationCode();
-
                                                         verificationCodes.set(personal.email, {
                                                             code: twoFACode,
                                                             timestamp: Date.now(),
@@ -2277,7 +2295,6 @@ const server = http.createServer((req, res) => {
                                                                 const isFirstTimeLogin = userByUsername.force_password_change === 1;
 
                                                                 const twoFACode = generateVerificationCode();
-
                                                                 verificationCodes.set(userByUsername.email, {
                                                                     code: twoFACode,
                                                                     timestamp: Date.now(),
@@ -2328,7 +2345,6 @@ const server = http.createServer((req, res) => {
                                                         const isFirstTimeLogin = user.force_password_change === 1;
 
                                                         const twoFACode = generateVerificationCode();
-
                                                         verificationCodes.set(user.email, {
                                                             code: twoFACode,
                                                             timestamp: Date.now(),
@@ -2395,7 +2411,6 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => {
             body += chunk.toString();
         });
-
         req.on('end', () => {
             const { email } = JSON.parse(body);
 
@@ -2418,7 +2433,6 @@ const server = http.createServer((req, res) => {
                             }
 
                             const newTwoFACode = generateVerificationCode();
-
                             verificationCodes.set(userByUsername.email, {
                                 code: newTwoFACode,
                                 timestamp: Date.now(),
@@ -2455,7 +2469,6 @@ const server = http.createServer((req, res) => {
                     }
 
                     const newTwoFACode = generateVerificationCode();
-
                     verificationCodes.set(user.email, {
                         code: newTwoFACode,
                         timestamp: Date.now(),
@@ -2496,7 +2509,6 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => {
             body += chunk.toString();
         });
-
         req.on('end', () => {
             const { email, code } = JSON.parse(body);
 
@@ -2531,16 +2543,29 @@ const server = http.createServer((req, res) => {
 
                 verificationCodes.delete(email);
 
+                // Determine redirect based on user type
+                let redirectTo = 'change-password.html?forced=true';
+                if (verificationData.userType === 'store_owner') {
+                    redirectTo = 'change-password.html?forced=true&redirect=store-owner.html';
+                } else if (verificationData.userType === 'store_employee') {
+                    redirectTo = 'change-password.html?forced=true&redirect=store-employee.html';
+                } else if (verificationData.userType === 'admin') {
+                    redirectTo = 'change-password.html?forced=true&redirect=admin.html';
+                } else if (verificationData.userType === 'client') {
+                    redirectTo = 'change-password.html?forced=true&redirect=client-dashboard.html';
+                }
+
                 res.writeHead(200, {
                     'Content-Type': 'application/json',
                     'Set-Cookie': `sessionId=${tempSessionId}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict`
                 });
+
                 res.end(JSON.stringify({
                     success: true,
                     message: 'Two-factor authentication successful. Password change required.',
                     requiresPasswordChange: true,
                     userType: verificationData.userType,
-                    redirectTo: 'change-password.html?forced=true'
+                    redirectTo: redirectTo
                 }));
 
                 return;
@@ -2589,6 +2614,7 @@ const server = http.createServer((req, res) => {
                 'Content-Type': 'application/json',
                 'Set-Cookie': `sessionId=${sessionId}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict`
             });
+
             res.end(JSON.stringify({
                 success: true,
                 message: 'Successfully logged in',
@@ -2615,6 +2641,7 @@ const server = http.createServer((req, res) => {
             'Content-Type': 'application/json',
             'Set-Cookie': 'sessionId=; HttpOnly; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Strict'
         });
+
         res.end(JSON.stringify({ success: true, message: 'Successfully logged out' }));
     }
 
@@ -2735,7 +2762,6 @@ const server = http.createServer((req, res) => {
                     }
                 });
             }
-
             else if (userIdStr.startsWith('personal_')) {
                 const personalId = userIdStr.replace('personal_', '');
 
@@ -2884,7 +2910,6 @@ const server = http.createServer((req, res) => {
             req.on('data', chunk => {
                 body += chunk.toString();
             });
-
             req.on('end', () => {
                 const categoryData = JSON.parse(body);
 
@@ -2967,7 +2992,6 @@ const server = http.createServer((req, res) => {
             req.on('data', chunk => {
                 body += chunk.toString();
             });
-
             req.on('end', () => {
                 const orderData = JSON.parse(body);
                 const userIdStr = String(userId);
@@ -3065,14 +3089,12 @@ const server = http.createServer((req, res) => {
             req.on('data', chunk => {
                 body += chunk.toString();
             });
-
             req.on('end', () => {
                 const reviewData = JSON.parse(body);
                 const userIdStr = String(userId);
 
                 if (userIdStr.startsWith('client_')) {
                     const clientId = parseInt(userIdStr.replace('client_', ''));
-
                     reviewData.client_id = clientId;
 
                     database.createReviewNew(reviewData, (err, reviewId) => {
@@ -3099,7 +3121,6 @@ const server = http.createServer((req, res) => {
             req.on('data', chunk => {
                 body += chunk.toString();
             });
-
             req.on('end', () => {
                 const requestData = JSON.parse(body);
                 const userIdStr = String(userId);
@@ -3169,7 +3190,6 @@ const server = http.createServer((req, res) => {
             req.on('data', chunk => {
                 body += chunk.toString();
             });
-
             req.on('end', () => {
                 const refundData = JSON.parse(body);
                 const userIdStr = String(userId);
@@ -3239,7 +3259,6 @@ const server = http.createServer((req, res) => {
             req.on('data', chunk => {
                 body += chunk.toString();
             });
-
             req.on('end', () => {
                 const productData = JSON.parse(body);
 
@@ -3332,7 +3351,6 @@ const server = http.createServer((req, res) => {
             req.on('data', chunk => {
                 body += chunk.toString();
             });
-
             req.on('end', () => {
                 const productData = JSON.parse(body);
 
@@ -3426,6 +3444,7 @@ const server = http.createServer((req, res) => {
         });
     }
 
+    // Updated /api/force-change-password endpoint with redirect handling
     else if (pathname === '/api/force-change-password' && req.method === 'POST') {
         const cookies = parseCookies(req);
         const sessionId = cookies.sessionId;
@@ -3438,14 +3457,12 @@ const server = http.createServer((req, res) => {
         }
 
         let body = '';
-
         req.on('data', chunk => {
             body += chunk.toString();
         });
-
         req.on('end', () => {
             try {
-                const { newPassword, confirmPassword } = JSON.parse(body);
+                const { newPassword, confirmPassword, redirectTo } = JSON.parse(body);
 
                 if (!newPassword || !confirmPassword) {
                     res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -3507,22 +3524,32 @@ const server = http.createServer((req, res) => {
 
                                 // Create new permanent session
                                 const newSessionId = generateSessionId();
-                                sessions.set(newSessionId, String(userId));
 
-                                // Determine redirect based on user type
-                                let redirectTo = 'dashboard.html';
+                                // Determine how to store the user ID based on user type
+                                let sessionUserId = String(userId);
 
-                                if (user.username === 'admin' || user.user_type === 'admin') {
-                                    redirectTo = 'admin.html';
-                                } else if (user.user_type === 'store_owner') {
-                                    redirectTo = 'store-owner.html';
-                                } else if (user.user_type === 'store_employee') {
-                                    redirectTo = 'store-employee.html';
-                                } else if (user.user_type === 'client') {
-                                    redirectTo = 'client-dashboard.html';
+                                if (user.user_type === 'store_owner' || user.user_type === 'store_employee') {
+                                    sessionUserId = `personal_${userId}`;
                                 }
 
-                                console.log(`Password changed successfully for user ${userId}, redirecting to ${redirectTo}`);
+                                sessions.set(newSessionId, sessionUserId);
+
+                                // Determine redirect based on user type or provided redirectTo
+                                let finalRedirect = redirectTo || 'dashboard.html';
+
+                                if (!redirectTo) {
+                                    if (user.username === 'admin' || user.user_type === 'admin') {
+                                        finalRedirect = 'admin.html';
+                                    } else if (user.user_type === 'store_owner') {
+                                        finalRedirect = 'store-owner.html';
+                                    } else if (user.user_type === 'store_employee') {
+                                        finalRedirect = 'store-employee.html';
+                                    } else if (user.user_type === 'client') {
+                                        finalRedirect = 'client-dashboard.html';
+                                    }
+                                }
+
+                                console.log(`Password changed successfully for user ${userId}, redirecting to ${finalRedirect}`);
 
                                 database.logAudit(userId, 'FORCED_PASSWORD_CHANGE', 'auth', userId.toString(),
                                     `${user.user_type || 'user'} forced password change completed`, ipAddress);
@@ -3530,12 +3557,13 @@ const server = http.createServer((req, res) => {
                                 // Set the cookie with proper options
                                 res.writeHead(200, {
                                     'Content-Type': 'application/json',
-                                    'Set-Cookie': `sessionId=${newSessionId}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict`
+                                    'Set-Cookie': `sessionId=${newSessionId}; HttpOnly; Path=/; Max-Age=86400; SameSite=Strict` // Extended to 24 hours
                                 });
+
                                 res.end(JSON.stringify({
                                     success: true,
                                     message: 'Password changed successfully.',
-                                    redirectTo: redirectTo,
+                                    redirectTo: finalRedirect,
                                     userType: user.user_type || 'user'
                                 }));
                             }
@@ -3583,34 +3611,35 @@ const server = http.createServer((req, res) => {
                                             [userId],
                                             (err, boss) => {
                                                 let userType = 'store_employee';
-                                                let redirectTo = 'store-employee.html';
+                                                let finalRedirect = redirectTo || 'store-employee.html';
 
                                                 if (boss) {
                                                     userType = 'store_owner';
-                                                    redirectTo = 'store-owner.html';
+                                                    finalRedirect = redirectTo || 'store-owner.html';
                                                 }
 
                                                 // Clear temp session
                                                 tempAdminSessions.delete(sessionId);
 
-                                                // Create new permanent session
+                                                // Create new permanent session with personal_ prefix
                                                 const newSessionId = generateSessionId();
                                                 sessions.set(newSessionId, `personal_${userId}`);
 
-                                                console.log(`Password changed successfully for ${userType} ${userId}, redirecting to ${redirectTo}`);
+                                                console.log(`Password changed successfully for ${userType} ${userId}, redirecting to ${finalRedirect}`);
 
                                                 database.logAudit(userId, 'FORCED_PASSWORD_CHANGE', 'auth', userId.toString(),
                                                     `${userType} forced password change completed`, ipAddress);
 
-                                                // Set the cookie with proper options
+                                                // Set the cookie with proper options - extended to 24 hours
                                                 res.writeHead(200, {
                                                     'Content-Type': 'application/json',
-                                                    'Set-Cookie': `sessionId=${newSessionId}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict`
+                                                    'Set-Cookie': `sessionId=${newSessionId}; HttpOnly; Path=/; Max-Age=86400; SameSite=Strict`
                                                 });
+
                                                 res.end(JSON.stringify({
                                                     success: true,
                                                     message: 'Password changed successfully.',
-                                                    redirectTo: redirectTo,
+                                                    redirectTo: finalRedirect,
                                                     userType: userType
                                                 }));
                                             }
@@ -3667,7 +3696,6 @@ const server = http.createServer((req, res) => {
                     req.on('data', chunk => {
                         body += chunk.toString();
                     });
-
                     req.on('end', () => {
                         const { firstName, lastName, ssn, email, password, storeId, dateOfHire } = JSON.parse(body);
 
@@ -3774,9 +3802,13 @@ const server = http.createServer((req, res) => {
                                                 if (err) {
                                                     database.database.run('ROLLBACK');
                                                     console.error('Error inserting personal:', err);
+
                                                     if (err.code === '23505') {
                                                         res.writeHead(400, { 'Content-Type': 'application/json' });
-                                                        res.end(JSON.stringify({ success: false, message: 'This personal ID is already taken. Please try again.' }));
+                                                        res.end(JSON.stringify({
+                                                            success: false,
+                                                            message: 'This personal ID is already taken. Please try again.'
+                                                        }));
                                                     } else {
                                                         res.writeHead(400, { 'Content-Type': 'application/json' });
                                                         res.end(JSON.stringify({ success: false, message: 'Error registering employee' }));
@@ -3816,25 +3848,43 @@ const server = http.createServer((req, res) => {
                                                                             console.error('Error inserting permissions:', err);
                                                                         }
 
-                                                                        database.database.run('COMMIT', (err) => {
-                                                                            if (err) {
-                                                                                database.database.run('ROLLBACK');
-                                                                                console.error('Error committing transaction:', err);
-                                                                                res.writeHead(500, { 'Content-Type': 'application/json' });
-                                                                                res.end(JSON.stringify({ success: false, message: 'Error completing registration' }));
-                                                                                return;
+                                                                        // Also create entry in users table for login with force_password_change = 1
+                                                                        database.database.run(
+                                                                            'INSERT INTO users (id, username, email, password, user_type, force_password_change) VALUES (?, ?, ?, ?, ?, ?)',
+                                                                            [
+                                                                                newPersonalId,
+                                                                                `${firstName} ${lastName}`,
+                                                                                email,
+                                                                                bcrypt.hashSync(password, 10),
+                                                                                'store_employee',
+                                                                                1
+                                                                            ],
+                                                                            (err) => {
+                                                                                if (err) {
+                                                                                    console.error('Error creating user entry for employee:', err);
+                                                                                }
+
+                                                                                database.database.run('COMMIT', (err) => {
+                                                                                    if (err) {
+                                                                                        database.database.run('ROLLBACK');
+                                                                                        console.error('Error committing transaction:', err);
+                                                                                        res.writeHead(500, { 'Content-Type': 'application/json' });
+                                                                                        res.end(JSON.stringify({ success: false, message: 'Error completing registration' }));
+                                                                                        return;
+                                                                                    }
+
+                                                                                    database.logAudit(personalId, 'EMPLOYEE_REGISTERED', 'employee', newPersonalId, `Employee registered: ${firstName} ${lastName}`, ipAddress);
+
+                                                                                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                                                                                    res.end(JSON.stringify({
+                                                                                        success: true,
+                                                                                        message: 'Employee registered successfully!',
+                                                                                        employeeId: newPersonalId,
+                                                                                        name: `${firstName} ${lastName}`
+                                                                                    }));
+                                                                                });
                                                                             }
-
-                                                                            database.logAudit(personalId, 'EMPLOYEE_REGISTERED', 'employee', newPersonalId, `Employee registered: ${firstName} ${lastName}`, ipAddress);
-
-                                                                            res.writeHead(200, { 'Content-Type': 'application/json' });
-                                                                            res.end(JSON.stringify({
-                                                                                success: true,
-                                                                                message: 'Employee registered successfully!',
-                                                                                employeeId: newPersonalId,
-                                                                                name: `${firstName} ${lastName}`
-                                                                            }));
-                                                                        });
+                                                                        );
                                                                     }
                                                                 );
                                                             }
@@ -3886,7 +3936,6 @@ const server = http.createServer((req, res) => {
                     req.on('data', chunk => {
                         body += chunk.toString();
                     });
-
                     req.on('end', () => {
                         const { employeeId, storeId } = JSON.parse(body);
 
@@ -3974,23 +4023,34 @@ const server = http.createServer((req, res) => {
                                                                                         console.error('Error deleting from personal:', err);
                                                                                     }
 
-                                                                                    database.database.run('COMMIT', (commitErr) => {
-                                                                                        if (commitErr) {
-                                                                                            database.database.run('ROLLBACK');
-                                                                                            console.error('Error committing transaction:', commitErr);
-                                                                                            res.writeHead(500, { 'Content-Type': 'application/json' });
-                                                                                            res.end(JSON.stringify({ success: false, message: 'Error completing deletion' }));
-                                                                                            return;
+                                                                                    // Also delete from users table
+                                                                                    database.database.run(
+                                                                                        'DELETE FROM users WHERE id = ?',
+                                                                                        [employeeId],
+                                                                                        (err) => {
+                                                                                            if (err) {
+                                                                                                console.error('Error deleting from users:', err);
+                                                                                            }
+
+                                                                                            database.database.run('COMMIT', (commitErr) => {
+                                                                                                if (commitErr) {
+                                                                                                    database.database.run('ROLLBACK');
+                                                                                                    console.error('Error committing transaction:', commitErr);
+                                                                                                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                                                                                                    res.end(JSON.stringify({ success: false, message: 'Error completing deletion' }));
+                                                                                                    return;
+                                                                                                }
+
+                                                                                                database.logAudit(personalId, 'EMPLOYEE_DELETED', 'employee', employeeId, `Employee deleted from store ${storeId}`, ipAddress);
+
+                                                                                                res.writeHead(200, { 'Content-Type': 'application/json' });
+                                                                                                res.end(JSON.stringify({
+                                                                                                    success: true,
+                                                                                                    message: 'Employee deleted successfully'
+                                                                                                }));
+                                                                                            });
                                                                                         }
-
-                                                                                        database.logAudit(personalId, 'EMPLOYEE_DELETED', 'employee', employeeId, `Employee deleted from store ${storeId}`, ipAddress);
-
-                                                                                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                                                                                        res.end(JSON.stringify({
-                                                                                            success: true,
-                                                                                            message: 'Employee deleted successfully'
-                                                                                        }));
-                                                                                    });
+                                                                                    );
                                                                                 }
                                                                             );
                                                                         }
@@ -4045,7 +4105,6 @@ const server = http.createServer((req, res) => {
                     req.on('data', chunk => {
                         body += chunk.toString();
                     });
-
                     req.on('end', () => {
                         const { employeeId, storeId, status } = JSON.parse(body);
 
@@ -4152,7 +4211,6 @@ const server = http.createServer((req, res) => {
                     req.on('data', chunk => {
                         body += chunk.toString();
                     });
-
                     req.on('end', () => {
                         const { employeeId, storeId, firstName, lastName, email } = JSON.parse(body);
 
@@ -4222,6 +4280,40 @@ const server = http.createServer((req, res) => {
                                                     res.writeHead(500, { 'Content-Type': 'application/json' });
                                                     res.end(JSON.stringify({ success: false, message: 'Error updating employee information' }));
                                                     return;
+                                                }
+
+                                                // Also update in users table if email was changed
+                                                if (email) {
+                                                    database.database.run(
+                                                        'UPDATE users SET email = ? WHERE id = ?',
+                                                        [email, employeeId],
+                                                        (err) => {
+                                                            if (err) {
+                                                                console.error('Error updating user email:', err);
+                                                            }
+                                                        }
+                                                    );
+                                                }
+
+                                                if (firstName || lastName) {
+                                                    database.database.get(
+                                                        'SELECT first_name, last_name FROM personal WHERE id = ?',
+                                                        [employeeId],
+                                                        (err, personal) => {
+                                                            if (!err && personal) {
+                                                                const newUsername = `${personal.first_name} ${personal.last_name}`;
+                                                                database.database.run(
+                                                                    'UPDATE users SET username = ? WHERE id = ?',
+                                                                    [newUsername, employeeId],
+                                                                    (err) => {
+                                                                        if (err) {
+                                                                            console.error('Error updating user username:', err);
+                                                                        }
+                                                                    }
+                                                                );
+                                                            }
+                                                        }
+                                                    );
                                                 }
 
                                                 database.logAudit(personalId, 'EMPLOYEE_UPDATED', 'employee', employeeId, `Employee information updated`, ipAddress);
@@ -4581,7 +4673,6 @@ const server = http.createServer((req, res) => {
             req.on('data', chunk => {
                 body += chunk.toString();
             });
-
             req.on('end', () => {
                 const { productCode, storeId } = JSON.parse(body);
 
@@ -4651,7 +4742,6 @@ const server = http.createServer((req, res) => {
             req.on('data', chunk => {
                 body += chunk.toString();
             });
-
             req.on('end', () => {
                 const { storeId, period, startDate, endDate, type } = JSON.parse(body);
 
