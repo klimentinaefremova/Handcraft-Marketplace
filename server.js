@@ -9,6 +9,7 @@ const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
 const port = process.env.PORT || 3000;
+
 const sessions = new Map();
 const verificationCodes = new Map();
 const tempUsers = new Map();
@@ -30,6 +31,7 @@ if (process.env.SMTP_USER && process.env.SMTP_PASS) {
             pass: process.env.SMTP_PASS
         }
     };
+
     emailTransporter = nodemailer.createTransport(emailConfig);
 
     emailTransporter.verify(function(error, success) {
@@ -72,18 +74,18 @@ function sendVerificationEmail(toEmail, code) {
         to: toEmail,
         subject: 'Your Verification Code - Handcraft Marketplace',
         html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #4169E1 0%, #FF69B4 100%); color: white; padding: 20px; border-radius: 10px;">
-            <h2 style="text-align: center;">🎨 Handcraft Marketplace</h2>
-            <div style="background-color: white; color: #333; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                <h3 style="color: #4169E1;">Account Verification</h3>
-                <p>Your verification code is:</p>
-                <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0; color: #4169E1;">
-                    ${code}
-                </div>
-                <p style="color: #e74c3c; font-weight: bold;">⚠️ This code will expire in 30 seconds</p>
-                <p style="color: #666; font-size: 12px;">If you didn't request this verification, please ignore this email.</p>
-            </div>
-        </div>`
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #4169E1 0%, #FF69B4 100%); color: white; padding: 20px; border-radius: 10px;">
+        <h2 style="text-align: center;">🎨 Handcraft Marketplace</h2>
+        <div style="background-color: white; color: #333; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <h3 style="color: #4169E1;">Account Verification</h3>
+          <p>Your verification code is:</p>
+          <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0; color: #4169E1;">
+            ${code}
+          </div>
+          <p style="color: #e74c3c; font-weight: bold;">⚠️ This code will expire in 30 seconds</p>
+          <p style="color: #666; font-size: 12px;">If you didn't request this verification, please ignore this email.</p>
+        </div>
+      </div>`
     };
 
     console.log('');
@@ -103,18 +105,18 @@ function send2FACode(toEmail, code) {
         to: toEmail,
         subject: 'Your 2FA Code - Handcraft Marketplace',
         html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #4169E1 0%, #FF69B4 100%); color: white; padding: 20px; border-radius: 10px;">
-            <h2 style="text-align: center;">🎨 Handcraft Marketplace</h2>
-            <div style="background-color: white; color: #333; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                <h3 style="color: #4169E1;">Two-Factor Authentication</h3>
-                <p>Your login verification code is:</p>
-                <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0; color: #4169E1;">
-                    ${code}
-                </div>
-                <p style="color: #e74c3c; font-weight: bold;">⚠️ This code will expire in 30 seconds</p>
-                <p style="color: #666; font-size: 12px;">If you're not trying to login, please secure your account immediately.</p>
-            </div>
-        </div>`
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #4169E1 0%, #FF69B4 100%); color: white; padding: 20px; border-radius: 10px;">
+        <h2 style="text-align: center;">🎨 Handcraft Marketplace</h2>
+        <div style="background-color: white; color: #333; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <h3 style="color: #4169E1;">Two-Factor Authentication</h3>
+          <p>Your login verification code is:</p>
+          <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0; color: #4169E1;">
+            ${code}
+          </div>
+          <p style="color: #e74c3c; font-weight: bold;">⚠️ This code will expire in 30 seconds</p>
+          <p style="color: #666; font-size: 12px;">If you're not trying to login, please secure your account immediately.</p>
+        </div>
+      </div>`
     };
 
     console.log('');
@@ -134,19 +136,19 @@ function sendStoreRegistrationEmail(toEmail, code, storeName) {
         to: toEmail,
         subject: 'Store Registration Verification - Handcraft Marketplace',
         html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #4169E1 0%, #FF69B4 100%); color: white; padding: 20px; border-radius: 10px;">
-            <h2 style="text-align: center;">🎨 Handcraft Marketplace</h2>
-            <div style="background-color: white; color: #333; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                <h3 style="color: #4169E1;">Store Registration Verification</h3>
-                <p>Thank you for registering your store "<strong>${storeName}</strong>" on Handcraft Marketplace!</p>
-                <p>Your verification code is:</p>
-                <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0; color: #4169E1;">
-                    ${code}
-                </div>
-                <p style="color: #e74c3c; font-weight: bold;">⚠️ This code will expire in 30 seconds</p>
-                <p style="color: #666; font-size: 12px;">If you didn't request this verification, please ignore this email.</p>
-            </div>
-        </div>`
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #4169E1 0%, #FF69B4 100%); color: white; padding: 20px; border-radius: 10px;">
+        <h2 style="text-align: center;">🎨 Handcraft Marketplace</h2>
+        <div style="background-color: white; color: #333; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <h3 style="color: #4169E1;">Store Registration Verification</h3>
+          <p>Thank you for registering your store "<strong>${storeName}</strong>" on Handcraft Marketplace!</p>
+          <p>Your verification code is:</p>
+          <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0; color: #4169E1;">
+            ${code}
+          </div>
+          <p style="color: #e74c3c; font-weight: bold;">⚠️ This code will expire in 30 seconds</p>
+          <p style="color: #666; font-size: 12px;">If you didn't request this verification, please ignore this email.</p>
+        </div>
+      </div>`
     };
 
     console.log('');
@@ -349,21 +351,19 @@ async function initializeDatabase() {
     ];
 
     try {
-        // Check if all tables exist
-        const checkTablesQuery = `
-            SELECT table_name
-            FROM information_schema.tables
-            WHERE table_schema = 'public'
-        `;
-
+        // For SQLite, we need to use a different approach to check tables
         const result = await new Promise((resolve, reject) => {
-            database.database.all(checkTablesQuery, [], (err, rows) => {
-                if (err) reject(err);
-                else resolve(rows || []);
-            });
+            database.database.all(
+                "SELECT name FROM sqlite_master WHERE type='table'",
+                [],
+                (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows || []);
+                }
+            );
         });
 
-        const existingTables = result.map(row => row.table_name);
+        const existingTables = result.map(row => row.name);
         const missingTables = requiredTables.filter(table => !existingTables.includes(table));
 
         if (missingTables.length > 0) {
@@ -408,28 +408,28 @@ function dropAllTables() {
 
         // Drop in reverse order of creation (respect foreign keys)
         const dropQueries = [
-            'DROP TABLE IF EXISTS user_roles CASCADE',
-            'DROP TABLE IF EXISTS roles CASCADE',
-            'DROP TABLE IF EXISTS delivery_address CASCADE',
-            'DROP TABLE IF EXISTS image CASCADE',
-            'DROP TABLE IF EXISTS color CASCADE',
-            'DROP TABLE IF EXISTS audit_log CASCADE',
-            'DROP TABLE IF EXISTS report CASCADE',
-            'DROP TABLE IF EXISTS refund CASCADE',
-            'DROP TABLE IF EXISTS request CASCADE',
-            'DROP TABLE IF EXISTS review CASCADE',
-            'DROP TABLE IF EXISTS order_items CASCADE',
-            'DROP TABLE IF EXISTS "order" CASCADE',
-            'DROP TABLE IF EXISTS permissions CASCADE',
-            'DROP TABLE IF EXISTS works_in_store CASCADE',
-            'DROP TABLE IF EXISTS employees CASCADE',
-            'DROP TABLE IF EXISTS boss CASCADE',
-            'DROP TABLE IF EXISTS product CASCADE',
-            'DROP TABLE IF EXISTS personal CASCADE',
-            'DROP TABLE IF EXISTS users CASCADE',
-            'DROP TABLE IF EXISTS category CASCADE',
-            'DROP TABLE IF EXISTS store CASCADE',
-            'DROP TABLE IF EXISTS client CASCADE'
+            'DROP TABLE IF EXISTS user_roles',
+            'DROP TABLE IF EXISTS roles',
+            'DROP TABLE IF EXISTS delivery_address',
+            'DROP TABLE IF EXISTS image',
+            'DROP TABLE IF EXISTS color',
+            'DROP TABLE IF EXISTS audit_log',
+            'DROP TABLE IF EXISTS report',
+            'DROP TABLE IF EXISTS refund',
+            'DROP TABLE IF EXISTS request',
+            'DROP TABLE IF EXISTS review',
+            'DROP TABLE IF EXISTS order_items',
+            'DROP TABLE IF EXISTS "order"',
+            'DROP TABLE IF EXISTS permissions',
+            'DROP TABLE IF EXISTS works_in_store',
+            'DROP TABLE IF EXISTS employees',
+            'DROP TABLE IF EXISTS boss',
+            'DROP TABLE IF EXISTS product',
+            'DROP TABLE IF EXISTS personal',
+            'DROP TABLE IF EXISTS users',
+            'DROP TABLE IF EXISTS category',
+            'DROP TABLE IF EXISTS store',
+            'DROP TABLE IF EXISTS client'
         ];
 
         let index = 0;
@@ -462,225 +462,225 @@ function createAllTables() {
         const createQueries = [
             // Client table (SERIAL ID starting from 1000)
             `CREATE TABLE IF NOT EXISTS client (
-                                                   client_id SERIAL PRIMARY KEY,
-                                                   first_name VARCHAR(100) NOT NULL,
-                last_name VARCHAR(100) NOT NULL,
-                email VARCHAR(255) UNIQUE NOT NULL,
-                password VARCHAR(255) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )`,
+        client_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        first_name VARCHAR(100) NOT NULL,
+        last_name VARCHAR(100) NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
 
             // Store table (VARCHAR ID)
             `CREATE TABLE IF NOT EXISTS store (
-                                                  store_id VARCHAR(10) PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                date_of_founding DATE NOT NULL,
-                physical_address TEXT NOT NULL,
-                store_email VARCHAR(255) UNIQUE NOT NULL,
-                rating DECIMAL(3,2) DEFAULT 0.0
-                )`,
+        store_id VARCHAR(10) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        date_of_founding DATE NOT NULL,
+        physical_address TEXT NOT NULL,
+        store_email VARCHAR(255) UNIQUE NOT NULL,
+        rating DECIMAL(3,2) DEFAULT 0.0
+      )`,
 
             // Category table (SERIAL ID starting from 1)
             `CREATE TABLE IF NOT EXISTS category (
-                                                     category_id SERIAL PRIMARY KEY,
-                                                     name VARCHAR(100) NOT NULL,
-                description TEXT,
-                parent_category_id INTEGER REFERENCES category(category_id) ON DELETE SET NULL
-                )`,
+        category_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name VARCHAR(100) NOT NULL,
+        description TEXT,
+        parent_category_id INTEGER REFERENCES category(category_id) ON DELETE SET NULL
+      )`,
 
             // Users table (VARCHAR ID)
             `CREATE TABLE IF NOT EXISTS users (
-                                                  id VARCHAR(50) PRIMARY KEY,
-                username VARCHAR(100) UNIQUE NOT NULL,
-                email VARCHAR(255) UNIQUE NOT NULL,
-                password VARCHAR(255) NOT NULL,
-                user_type VARCHAR(50) NOT NULL,
-                force_password_change INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )`,
+        id VARCHAR(50) PRIMARY KEY,
+        username VARCHAR(100) UNIQUE NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        user_type VARCHAR(50) NOT NULL,
+        force_password_change INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
 
             // Personal table (VARCHAR ID - format: storeId(3) + '001' for owner, storeId(3) + employeeNum(3) for employees)
             `CREATE TABLE IF NOT EXISTS personal (
-                                                     id VARCHAR(10) PRIMARY KEY,
-                first_name VARCHAR(100) NOT NULL,
-                last_name VARCHAR(100) NOT NULL,
-                ssn VARCHAR(13) UNIQUE NOT NULL,
-                email VARCHAR(255) UNIQUE NOT NULL,
-                password VARCHAR(255) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )`,
+        id VARCHAR(10) PRIMARY KEY,
+        first_name VARCHAR(100) NOT NULL,
+        last_name VARCHAR(100) NOT NULL,
+        ssn VARCHAR(13) UNIQUE NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
 
             // Product table (VARCHAR ID)
             `CREATE TABLE IF NOT EXISTS product (
-                                                    id VARCHAR(50) PRIMARY KEY,
-                code VARCHAR(20) UNIQUE NOT NULL,
-                description TEXT NOT NULL,
-                price DECIMAL(10,2) NOT NULL,
-                availability INTEGER NOT NULL DEFAULT 0,
-                weight DECIMAL(10,2),
-                dimensions VARCHAR(50),
-                production_time INTEGER,
-                category_id INTEGER REFERENCES category(category_id) ON DELETE SET NULL,
-                store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )`,
+        id VARCHAR(50) PRIMARY KEY,
+        code VARCHAR(20) UNIQUE NOT NULL,
+        description TEXT NOT NULL,
+        price DECIMAL(10,2) NOT NULL,
+        availability INTEGER NOT NULL DEFAULT 0,
+        weight DECIMAL(10,2),
+        dimensions VARCHAR(50),
+        production_time INTEGER,
+        category_id INTEGER REFERENCES category(category_id) ON DELETE SET NULL,
+        store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
 
             // Boss table (VARCHAR ID - references personal.id)
             `CREATE TABLE IF NOT EXISTS boss (
-                                                 boss_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
-                signature TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )`,
+        boss_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
+        signature TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
 
             // Employees table (VARCHAR ID - references personal.id)
             `CREATE TABLE IF NOT EXISTS employees (
-                                                      employee_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
-                date_of_hire DATE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )`,
+        employee_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
+        date_of_hire DATE NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
 
             // Works_in_store table (junction)
             `CREATE TABLE IF NOT EXISTS works_in_store (
-                                                           personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
-                store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
-                PRIMARY KEY (personal_id, store_id)
-                )`,
+        personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
+        store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
+        PRIMARY KEY (personal_id, store_id)
+      )`,
 
             // Permissions table
             `CREATE TABLE IF NOT EXISTS permissions (
-                                                        permission_id SERIAL PRIMARY KEY,
-                                                        personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
-                type VARCHAR(50) NOT NULL,
-                authorisation TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )`,
+        permission_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
+        type VARCHAR(50) NOT NULL,
+        authorisation TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
 
             // Order table (VARCHAR ID)
             `CREATE TABLE IF NOT EXISTS "order" (
-                                                    order_num VARCHAR(20) PRIMARY KEY,
-                client_id INTEGER REFERENCES client(client_id) ON DELETE SET NULL,
-                order_date TIMESTAMP NOT NULL,
-                quantity INTEGER NOT NULL,
-                payment_method VARCHAR(50) NOT NULL,
-                discount DECIMAL(10,2) DEFAULT 0,
-                delivery_address TEXT NOT NULL,
-                store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE SET NULL,
-                status VARCHAR(50) DEFAULT 'pending',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )`,
+        order_num VARCHAR(20) PRIMARY KEY,
+        client_id INTEGER REFERENCES client(client_id) ON DELETE SET NULL,
+        order_date TIMESTAMP NOT NULL,
+        quantity INTEGER NOT NULL,
+        payment_method VARCHAR(50) NOT NULL,
+        discount DECIMAL(10,2) DEFAULT 0,
+        delivery_address TEXT NOT NULL,
+        store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE SET NULL,
+        status VARCHAR(50) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
 
             // Order_items table
             `CREATE TABLE IF NOT EXISTS order_items (
-                                                        item_id SERIAL PRIMARY KEY,
-                                                        order_num VARCHAR(20) REFERENCES "order"(order_num) ON DELETE CASCADE,
-                product_code VARCHAR(20) REFERENCES product(code) ON DELETE SET NULL,
-                quantity INTEGER NOT NULL,
-                price DECIMAL(10,2) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )`,
+        item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_num VARCHAR(20) REFERENCES "order"(order_num) ON DELETE CASCADE,
+        product_code VARCHAR(20) REFERENCES product(code) ON DELETE SET NULL,
+        quantity INTEGER NOT NULL,
+        price DECIMAL(10,2) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
 
             // Review table (VARCHAR ID)
             `CREATE TABLE IF NOT EXISTS review (
-                                                   review_id VARCHAR(20) PRIMARY KEY,
-                client_id INTEGER REFERENCES client(client_id) ON DELETE SET NULL,
-                product_code VARCHAR(20) REFERENCES product(code) ON DELETE CASCADE,
-                rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
-                comment TEXT,
-                review_date TIMESTAMP NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )`,
+        review_id VARCHAR(20) PRIMARY KEY,
+        client_id INTEGER REFERENCES client(client_id) ON DELETE SET NULL,
+        product_code VARCHAR(20) REFERENCES product(code) ON DELETE CASCADE,
+        rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+        comment TEXT,
+        review_date TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
 
             // Request table (VARCHAR ID)
             `CREATE TABLE IF NOT EXISTS request (
-                                                    request_num VARCHAR(50) PRIMARY KEY,
-                date_and_time TIMESTAMP NOT NULL,
-                problem TEXT NOT NULL,
-                client_id INTEGER REFERENCES client(client_id) ON DELETE SET NULL,
-                store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
-                status VARCHAR(50) DEFAULT 'pending',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )`,
+        request_num VARCHAR(50) PRIMARY KEY,
+        date_and_time TIMESTAMP NOT NULL,
+        problem TEXT NOT NULL,
+        client_id INTEGER REFERENCES client(client_id) ON DELETE SET NULL,
+        store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
+        status VARCHAR(50) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
 
             // Refund table (VARCHAR ID)
             `CREATE TABLE IF NOT EXISTS refund (
-                                                   refund_id VARCHAR(50) PRIMARY KEY,
-                order_num VARCHAR(20) REFERENCES "order"(order_num) ON DELETE CASCADE,
-                amount DECIMAL(10,2) NOT NULL,
-                reason TEXT NOT NULL,
-                status VARCHAR(50) DEFAULT 'pending',
-                request_date TIMESTAMP NOT NULL,
-                processed_date TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )`,
+        refund_id VARCHAR(50) PRIMARY KEY,
+        order_num VARCHAR(20) REFERENCES "order"(order_num) ON DELETE CASCADE,
+        amount DECIMAL(10,2) NOT NULL,
+        reason TEXT NOT NULL,
+        status VARCHAR(50) DEFAULT 'pending',
+        request_date TIMESTAMP NOT NULL,
+        processed_date TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
 
             // Report table (VARCHAR ID)
             `CREATE TABLE IF NOT EXISTS report (
-                                                   id VARCHAR(50) PRIMARY KEY,
-                store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
-                period VARCHAR(50) NOT NULL,
-                start_date DATE NOT NULL,
-                end_date DATE NOT NULL,
-                type VARCHAR(50) NOT NULL,
-                generated_by VARCHAR(10) REFERENCES personal(id) ON DELETE SET NULL,
-                generated_at TIMESTAMP NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )`,
+        id VARCHAR(50) PRIMARY KEY,
+        store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
+        period VARCHAR(50) NOT NULL,
+        start_date DATE NOT NULL,
+        end_date DATE NOT NULL,
+        type VARCHAR(50) NOT NULL,
+        generated_by VARCHAR(10) REFERENCES personal(id) ON DELETE SET NULL,
+        generated_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
 
             // Audit_log table (SERIAL ID)
             `CREATE TABLE IF NOT EXISTS audit_log (
-                                                      log_id SERIAL PRIMARY KEY,
-                                                      user_id VARCHAR(50),
-                action VARCHAR(100) NOT NULL,
-                resource_type VARCHAR(50),
-                resource_id VARCHAR(50),
-                details TEXT,
-                ip_address VARCHAR(45),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )`,
+        log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id VARCHAR(50),
+        action VARCHAR(100) NOT NULL,
+        resource_type VARCHAR(50),
+        resource_id VARCHAR(50),
+        details TEXT,
+        ip_address VARCHAR(45),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
 
             // Color table (SERIAL ID)
             `CREATE TABLE IF NOT EXISTS color (
-                                                  color_id SERIAL PRIMARY KEY,
-                                                  name VARCHAR(50) NOT NULL,
-                hex_code VARCHAR(7) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )`,
+        color_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name VARCHAR(50) NOT NULL,
+        hex_code VARCHAR(7) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
 
             // Image table (SERIAL ID)
             `CREATE TABLE IF NOT EXISTS image (
-                                                  image_id SERIAL PRIMARY KEY,
-                                                  product_code VARCHAR(20) REFERENCES product(code) ON DELETE CASCADE,
-                image_url TEXT NOT NULL,
-                is_primary BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )`,
+        image_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_code VARCHAR(20) REFERENCES product(code) ON DELETE CASCADE,
+        image_url TEXT NOT NULL,
+        is_primary BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
 
             // Delivery_address table (SERIAL ID)
             `CREATE TABLE IF NOT EXISTS delivery_address (
-                                                             address_id SERIAL PRIMARY KEY,
-                                                             client_id INTEGER REFERENCES client(client_id) ON DELETE CASCADE,
-                address TEXT NOT NULL,
-                city VARCHAR(100) NOT NULL,
-                postcode VARCHAR(20) NOT NULL,
-                country VARCHAR(100) NOT NULL,
-                is_default BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )`,
+        address_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_id INTEGER REFERENCES client(client_id) ON DELETE CASCADE,
+        address TEXT NOT NULL,
+        city VARCHAR(100) NOT NULL,
+        postcode VARCHAR(20) NOT NULL,
+        country VARCHAR(100) NOT NULL,
+        is_default BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
 
             // Roles table (SERIAL ID)
             `CREATE TABLE IF NOT EXISTS roles (
-                                                  role_id SERIAL PRIMARY KEY,
-                                                  name VARCHAR(50) UNIQUE NOT NULL,
-                description TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )`,
+        role_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name VARCHAR(50) UNIQUE NOT NULL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
 
             // User_roles table (junction)
             `CREATE TABLE IF NOT EXISTS user_roles (
-                                                       user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
-                role_id INTEGER REFERENCES roles(role_id) ON DELETE CASCADE,
-                PRIMARY KEY (user_id, role_id)
-                )`
+        user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+        role_id INTEGER REFERENCES roles(role_id) ON DELETE CASCADE,
+        PRIMARY KEY (user_id, role_id)
+      )`
         ];
 
         let index = 0;
@@ -765,18 +765,7 @@ function insertInitialData() {
     return new Promise((resolve, reject) => {
         console.log('📝 Inserting initial data...');
 
-        // Insert General category (ID will be 1 due to SERIAL)
-        database.database.run(
-            `INSERT INTO category (name, description)
-             VALUES ('General', 'General products category')
-                 ON CONFLICT DO NOTHING`,
-            [],
-            (err) => {
-                if (err) {
-                    console.error('Error inserting General category:', err.message);
-                }
-            }
-        );
+        // REMOVED: Category insertion - now handled by database.ensureGeneralCategory()
 
         // Insert admin user
         const adminId = 'admin_' + Date.now().toString().slice(-6);
@@ -784,8 +773,8 @@ function insertInitialData() {
 
         database.database.run(
             `INSERT INTO users (id, username, email, password, user_type, force_password_change)
-             VALUES ($1, $2, $3, $4, $5, $6)
-                 ON CONFLICT DO NOTHING`,
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT DO NOTHING`,
             [adminId, 'admin', 'admin@handcraft.com', adminPassword, 'admin', 1],
             (err) => {
                 if (err) {
@@ -810,8 +799,8 @@ function insertInitialData() {
         roles.forEach(role => {
             database.database.run(
                 `INSERT INTO roles (name, description)
-                 VALUES ($1, $2)
-                     ON CONFLICT DO NOTHING`,
+         VALUES ($1, $2)
+         ON CONFLICT DO NOTHING`,
                 [role.name, role.description],
                 (err) => {
                     if (err) {
@@ -821,12 +810,12 @@ function insertInitialData() {
                     if (rolesInserted === roles.length) {
                         console.log('✅ Roles inserted');
 
-                        // Check if General category exists
+                        // Ensure General category exists
                         database.ensureGeneralCategory((err) => {
                             if (err) {
                                 console.error('Error ensuring General category:', err.message);
                             } else {
-                                console.log('✅ General category exists');
+                                console.log('✅ General category checked/created');
                             }
                             resolve();
                         });
@@ -924,6 +913,7 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => {
             body += chunk.toString();
         });
+
         req.on('end', () => {
             const { username, email, password, userType, firstName, lastName } = JSON.parse(body);
 
@@ -988,6 +978,7 @@ const server = http.createServer((req, res) => {
                         .then(() => {
                             console.log('✅ Verification email sent to:', email);
                             database.logAudit(null, 'REGISTER_ATTEMPT', 'user', null, `Registration attempt for ${email} as ${userType}`, ipAddress);
+
                             res.writeHead(200, { 'Content-Type': 'application/json' });
                             res.end(JSON.stringify({
                                 success: true,
@@ -1015,6 +1006,7 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => {
             body += chunk.toString();
         });
+
         req.on('end', () => {
             const formData = JSON.parse(body);
 
@@ -1181,6 +1173,7 @@ const server = http.createServer((req, res) => {
                                     .then(() => {
                                         console.log('✅ Store registration email sent to:', formData.ownerEmail);
                                         database.logAudit(null, 'STORE_REGISTER_ATTEMPT', 'store', null, `Store registration attempt: ${formData.storeName}`, ipAddress);
+
                                         res.writeHead(200, { 'Content-Type': 'application/json' });
                                         res.end(JSON.stringify({
                                             success: true,
@@ -1213,6 +1206,7 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => {
             body += chunk.toString();
         });
+
         req.on('end', () => {
             const { firstName, lastName, email, password, address, city, postcode, country, isDefaultAddress } = JSON.parse(body);
 
@@ -1277,6 +1271,7 @@ const server = http.createServer((req, res) => {
                     .then(() => {
                         console.log('✅ Verification email sent to:', email);
                         database.logAudit(null, 'CLIENT_REGISTER_ATTEMPT', 'client', null, `Client registration attempt for ${email}`, ipAddress);
+
                         res.writeHead(200, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({
                             success: true,
@@ -1303,6 +1298,7 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => {
             body += chunk.toString();
         });
+
         req.on('end', () => {
             const { email } = JSON.parse(body);
 
@@ -1437,6 +1433,7 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => {
             body += chunk.toString();
         });
+
         req.on('end', () => {
             const { email, code } = JSON.parse(body);
 
@@ -1667,6 +1664,7 @@ const server = http.createServer((req, res) => {
                 });
             } else {
                 const userId = 'user_' + Date.now().toString().slice(-8);
+
                 database.createUser(userId, tempUserData.username, tempUserData.email, tempUserData.password, tempUserData.userType, (err, userId) => {
                     if (err) {
                         console.error('Error creating user:', err);
@@ -1697,8 +1695,10 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => {
             body += chunk.toString();
         });
+
         req.on('end', () => {
             const { email, password } = JSON.parse(body);
+
             console.log(`🔍 Login attempt for email: ${email}`);
 
             // First check if it's a client
@@ -1709,6 +1709,7 @@ const server = http.createServer((req, res) => {
 
                 if (client) {
                     console.log(`🔍 Found client: ${client.email}`);
+
                     if (!client.password) {
                         console.log('❌ Client has no password set');
                         database.logAudit(client.client_ID, 'LOGIN_FAILED', 'auth', client.client_ID?.toString() || 'unknown', 'Client has no password', ipAddress);
@@ -1731,9 +1732,11 @@ const server = http.createServer((req, res) => {
                         // Clients go directly to dashboard (no 2FA)
                         const sessionId = generateSessionId();
                         const clientId = client.client_ID;
+
                         sessions.set(sessionId, `client_${clientId}`);
 
                         console.log(`✅ Client login successful. Session: ${sessionId}, User: client_${clientId}`);
+
                         database.logAudit(clientId, 'LOGIN_SUCCESS', 'auth',
                             typeof clientId === 'string' ? clientId : String(clientId),
                             'Client logged in successfully', ipAddress);
@@ -1742,7 +1745,6 @@ const server = http.createServer((req, res) => {
                             'Content-Type': 'application/json',
                             'Set-Cookie': `sessionId=${sessionId}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict`
                         });
-
                         res.end(JSON.stringify({
                             success: true,
                             message: 'Successfully logged in',
@@ -1767,6 +1769,7 @@ const server = http.createServer((req, res) => {
 
                     if (personal) {
                         console.log(`🔍 Found personal user: ${personal.email}`);
+
                         if (!personal.password) {
                             console.log('❌ Personal has no password set');
                             database.logAudit(personal.id, 'LOGIN_FAILED', 'auth', personal.id, 'Personal has no password', ipAddress);
@@ -1802,6 +1805,7 @@ const server = http.createServer((req, res) => {
                                                 const isFirstTimeLogin = user && user.force_password_change === 1;
 
                                                 const twoFACode = generateVerificationCode();
+
                                                 verificationCodes.set(personal.email, {
                                                     code: twoFACode,
                                                     timestamp: Date.now(),
@@ -1861,6 +1865,7 @@ const server = http.createServer((req, res) => {
                                                         const isFirstTimeLogin = user && user.force_password_change === 1;
 
                                                         const twoFACode = generateVerificationCode();
+
                                                         verificationCodes.set(personal.email, {
                                                             code: twoFACode,
                                                             timestamp: Date.now(),
@@ -1922,6 +1927,7 @@ const server = http.createServer((req, res) => {
                                                                 const isFirstTimeLogin = isAdminUser && userByUsername.force_password_change === 1;
 
                                                                 const twoFACode = generateVerificationCode();
+
                                                                 verificationCodes.set(userByUsername.email, {
                                                                     code: twoFACode,
                                                                     timestamp: Date.now(),
@@ -1972,6 +1978,7 @@ const server = http.createServer((req, res) => {
                                                         const isFirstTimeLogin = isAdminUser && user.force_password_change === 1;
 
                                                         const twoFACode = generateVerificationCode();
+
                                                         verificationCodes.set(user.email, {
                                                             code: twoFACode,
                                                             timestamp: Date.now(),
@@ -2037,6 +2044,7 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => {
             body += chunk.toString();
         });
+
         req.on('end', () => {
             const { email } = JSON.parse(body);
 
@@ -2059,6 +2067,7 @@ const server = http.createServer((req, res) => {
                             }
 
                             const newTwoFACode = generateVerificationCode();
+
                             verificationCodes.set(userByUsername.email, {
                                 code: newTwoFACode,
                                 timestamp: Date.now(),
@@ -2094,6 +2103,7 @@ const server = http.createServer((req, res) => {
                     }
 
                     const newTwoFACode = generateVerificationCode();
+
                     verificationCodes.set(user.email, {
                         code: newTwoFACode,
                         timestamp: Date.now(),
@@ -2134,6 +2144,7 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => {
             body += chunk.toString();
         });
+
         req.on('end', () => {
             const { email, code } = JSON.parse(body);
 
@@ -2172,7 +2183,6 @@ const server = http.createServer((req, res) => {
                     'Content-Type': 'application/json',
                     'Set-Cookie': `sessionId=${tempSessionId}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict`
                 });
-
                 res.end(JSON.stringify({
                     success: true,
                     message: 'Two-factor authentication successful. Password change required.',
@@ -2202,6 +2212,7 @@ const server = http.createServer((req, res) => {
 
             // Determine redirect based on user type
             let redirectTo = '';
+
             switch(verificationData.userType) {
                 case 'client':
                     redirectTo = 'client-dashboard.html';
@@ -2225,7 +2236,6 @@ const server = http.createServer((req, res) => {
                 'Content-Type': 'application/json',
                 'Set-Cookie': `sessionId=${sessionId}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict`
             });
-
             res.end(JSON.stringify({
                 success: true,
                 message: 'Successfully logged in',
@@ -2278,6 +2288,7 @@ const server = http.createServer((req, res) => {
 
             if (userIdStr.startsWith('client_')) {
                 const clientId = parseInt(userIdStr.replace('client_', ''));
+
                 database.getClientById(clientId, (err, client) => {
                     if (err || !client) {
                         res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -2297,8 +2308,10 @@ const server = http.createServer((req, res) => {
                     }
                 });
             }
+
             else if (userIdStr.startsWith('personal_')) {
                 const personalId = userIdStr.replace('personal_', '');
+
                 database.getPersonalById(personalId, (err, personal) => {
                     if (err || !personal) {
                         res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -2317,8 +2330,8 @@ const server = http.createServer((req, res) => {
                             if (boss) {
                                 database.database.all(
                                     `SELECT s.* FROM store s
-                                                         JOIN works_in_store w ON s.store_id = w.store_id
-                                     WHERE w.personal_id = $1`,
+                   JOIN works_in_store w ON s.store_id = w.store_id
+                   WHERE w.personal_id = $1`,
                                     [personalId],
                                     (err, stores) => {
                                         if (err) {
@@ -2352,8 +2365,8 @@ const server = http.createServer((req, res) => {
                                         if (employee) {
                                             database.database.all(
                                                 `SELECT s.* FROM store s
-                                                                     JOIN works_in_store w ON s.store_id = w.store_id
-                                                 WHERE w.personal_id = $1`,
+                         JOIN works_in_store w ON s.store_id = w.store_id
+                         WHERE w.personal_id = $1`,
                                                 [personalId],
                                                 (err, stores) => {
                                                     if (err) {
@@ -2444,6 +2457,7 @@ const server = http.createServer((req, res) => {
             req.on('data', chunk => {
                 body += chunk.toString();
             });
+
             req.on('end', () => {
                 const categoryData = JSON.parse(body);
 
@@ -2469,6 +2483,7 @@ const server = http.createServer((req, res) => {
                         res.end(JSON.stringify({ success: false, message: 'Failed to create category' }));
                     } else {
                         database.logAudit(personalId, 'CATEGORY_CREATED', 'category', category.id.toString(), `New category created: ${category.name}`, ipAddress);
+
                         res.writeHead(200, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({
                             success: true,
@@ -2525,9 +2540,9 @@ const server = http.createServer((req, res) => {
             req.on('data', chunk => {
                 body += chunk.toString();
             });
+
             req.on('end', () => {
                 const orderData = JSON.parse(body);
-
                 const userIdStr = String(userId);
 
                 if (userIdStr.startsWith('client_')) {
@@ -2600,6 +2615,7 @@ const server = http.createServer((req, res) => {
 
             if (userIdStr.startsWith('client_')) {
                 const clientId = parseInt(userIdStr.replace('client_', ''));
+
                 database.getOrdersByClient(clientId, (err, orders) => {
                     if (err) {
                         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -2622,13 +2638,14 @@ const server = http.createServer((req, res) => {
             req.on('data', chunk => {
                 body += chunk.toString();
             });
+
             req.on('end', () => {
                 const reviewData = JSON.parse(body);
-
                 const userIdStr = String(userId);
 
                 if (userIdStr.startsWith('client_')) {
                     const clientId = parseInt(userIdStr.replace('client_', ''));
+
                     reviewData.client_id = clientId;
 
                     database.createReviewNew(reviewData, (err, reviewId) => {
@@ -2655,9 +2672,9 @@ const server = http.createServer((req, res) => {
             req.on('data', chunk => {
                 body += chunk.toString();
             });
+
             req.on('end', () => {
                 const requestData = JSON.parse(body);
-
                 const userIdStr = String(userId);
 
                 if (userIdStr.startsWith('client_')) {
@@ -2725,9 +2742,9 @@ const server = http.createServer((req, res) => {
             req.on('data', chunk => {
                 body += chunk.toString();
             });
+
             req.on('end', () => {
                 const refundData = JSON.parse(body);
-
                 const userIdStr = String(userId);
 
                 if (userIdStr.startsWith('client_')) {
@@ -2744,7 +2761,6 @@ const server = http.createServer((req, res) => {
                             }
 
                             const storeId = result[0].store_id;
-
                             const now = new Date();
                             const month = (now.getMonth() + 1).toString().padStart(2, '0');
                             const year = now.getFullYear().toString().slice(-3);
@@ -2796,6 +2812,7 @@ const server = http.createServer((req, res) => {
             req.on('data', chunk => {
                 body += chunk.toString();
             });
+
             req.on('end', () => {
                 const productData = JSON.parse(body);
 
@@ -2827,8 +2844,9 @@ const server = http.createServer((req, res) => {
                                     return;
                                 }
 
+                                // FIXED: Changed SQL syntax from SUBSTRING(code FROM 4) to SUBSTR(code, 4) for SQLite compatibility
                                 database.database.get(
-                                    'SELECT MAX(CAST(SUBSTRING(code FROM 4) AS INTEGER)) as max_product_num FROM product WHERE store_id = $1',
+                                    'SELECT MAX(CAST(SUBSTR(code, 4) AS INTEGER)) as max_product_num FROM product WHERE store_id = $1',
                                     [storeId],
                                     (err, result) => {
                                         if (err) {
@@ -2862,6 +2880,7 @@ const server = http.createServer((req, res) => {
                                                 }));
                                             } else {
                                                 database.logAudit(personalId, 'PRODUCT_ADDED', 'product', productId.toString(), 'New product added', ipAddress);
+
                                                 res.writeHead(200, { 'Content-Type': 'application/json' });
                                                 res.end(JSON.stringify({
                                                     success: true,
@@ -2887,6 +2906,7 @@ const server = http.createServer((req, res) => {
             req.on('data', chunk => {
                 body += chunk.toString();
             });
+
             req.on('end', () => {
                 const productData = JSON.parse(body);
 
@@ -2995,6 +3015,7 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => {
             body += chunk.toString();
         });
+
         req.on('end', () => {
             const { currentPassword, newPassword, confirmPassword } = JSON.parse(body);
 
@@ -3088,6 +3109,7 @@ const server = http.createServer((req, res) => {
                     req.on('data', chunk => {
                         body += chunk.toString();
                     });
+
                     req.on('end', () => {
                         const { firstName, lastName, ssn, email, password, storeId, dateOfHire } = JSON.parse(body);
 
@@ -3299,6 +3321,7 @@ const server = http.createServer((req, res) => {
                     req.on('data', chunk => {
                         body += chunk.toString();
                     });
+
                     req.on('end', () => {
                         const { employeeId, storeId } = JSON.parse(body);
 
@@ -3450,6 +3473,7 @@ const server = http.createServer((req, res) => {
                     req.on('data', chunk => {
                         body += chunk.toString();
                     });
+
                     req.on('end', () => {
                         const { employeeId, storeId, status } = JSON.parse(body);
 
@@ -3549,6 +3573,7 @@ const server = http.createServer((req, res) => {
                     req.on('data', chunk => {
                         body += chunk.toString();
                     });
+
                     req.on('end', () => {
                         const { employeeId, storeId, firstName, lastName, email } = JSON.parse(body);
 
@@ -3965,6 +3990,7 @@ const server = http.createServer((req, res) => {
             req.on('data', chunk => {
                 body += chunk.toString();
             });
+
             req.on('end', () => {
                 const { productCode, storeId } = JSON.parse(body);
 
@@ -4034,6 +4060,7 @@ const server = http.createServer((req, res) => {
             req.on('data', chunk => {
                 body += chunk.toString();
             });
+
             req.on('end', () => {
                 const { storeId, period, startDate, endDate, type } = JSON.parse(body);
 

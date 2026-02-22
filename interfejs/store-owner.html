@@ -150,6 +150,7 @@
                         <option value="custom">Custom Range</option>
                     </select>
                 </div>
+
                 <div id="custom-date-range" style="display: none;">
                     <div class="form-row">
                         <div class="form-group">
@@ -162,6 +163,7 @@
                         </div>
                     </div>
                 </div>
+
                 <div class="form-group">
                     <label for="report-type">Report Type</label>
                     <select id="report-type">
@@ -171,7 +173,9 @@
                         <option value="financial">Financial Report</option>
                     </select>
                 </div>
+
                 <button id="generate-store-report" class="btn-primary">Generate Report</button>
+
                 <div id="report-results" style="margin-top: 2rem;"></div>
             </div>
         </div>
@@ -213,11 +217,14 @@
                             <label for="product-production-time">Production Time (days) *</label>
                             <input type="number" id="product-production-time" min="1" required>
                         </div>
-                        <div class="form-group">
+                        <div class="form-group category-group">
                             <label for="product-category">Category *</label>
-                            <select id="product-category" required>
-                                <option value="">Select Category</option>
-                            </select>
+                            <div class="category-input-group">
+                                <select id="product-category" required>
+                                    <option value="">Select Category</option>
+                                </select>
+                                <button type="button" id="add-category-btn" class="btn-small btn-secondary">➕ New Category</button>
+                            </div>
                         </div>
                     </div>
 
@@ -285,6 +292,7 @@
     </div>
 </main>
 
+<!-- Edit Product Modal -->
 <div id="edit-product-modal" class="modal" style="display: none;">
     <div class="modal-content modal-large">
         <span class="close">&times;</span>
@@ -324,11 +332,14 @@
                     <label for="edit-product-production-time">Production Time (days)</label>
                     <input type="number" id="edit-product-production-time" min="1">
                 </div>
-                <div class="form-group">
+                <div class="form-group category-group">
                     <label for="edit-product-category">Category</label>
-                    <select id="edit-product-category">
-                        <option value="">Select Category</option>
-                    </select>
+                    <div class="category-input-group">
+                        <select id="edit-product-category">
+                            <option value="">Select Category</option>
+                        </select>
+                        <button type="button" id="edit-add-category-btn" class="btn-small btn-secondary">➕ New Category</button>
+                    </div>
                 </div>
             </div>
 
@@ -347,6 +358,7 @@
     </div>
 </div>
 
+<!-- Edit Employee Modal -->
 <div id="edit-employee-modal" class="modal" style="display: none;">
     <div class="modal-content">
         <span class="close">&times;</span>
@@ -384,6 +396,35 @@
     </div>
 </div>
 
+<!-- Add Category Modal -->
+<div id="add-category-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2>Create New Category</h2>
+        <form id="add-category-form" class="form">
+            <div class="form-group">
+                <label for="category-name">Category Name *</label>
+                <input type="text" id="category-name" required>
+            </div>
+
+            <div class="form-group">
+                <label for="category-description">Description</label>
+                <textarea id="category-description" rows="3" placeholder="Optional description"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="category-parent">Parent Category (optional)</label>
+                <select id="category-parent">
+                    <option value="">None (Top Level Category)</option>
+                </select>
+            </div>
+
+            <button type="submit" class="btn-primary">Create Category</button>
+            <button type="button" id="cancel-category-btn" class="btn-secondary">Cancel</button>
+        </form>
+    </div>
+</div>
+
 <footer>
     <div class="footer-content">
         <div class="footer-section">
@@ -407,6 +448,7 @@
 <script>
     document.addEventListener('DOMContentLoaded', async () => {
         const user = await loadUserData();
+
         if (!user || user.userType !== 'store_owner') {
             window.location.href = 'index.html';
             return;
@@ -463,6 +505,23 @@
 
         // Generate report
         document.getElementById('generate-store-report').addEventListener('click', generateStoreReport);
+
+        // Add Category button functionality
+        document.getElementById('add-category-btn').addEventListener('click', () => {
+            openCategoryModal();
+        });
+
+        document.getElementById('edit-add-category-btn').addEventListener('click', () => {
+            openCategoryModal('edit');
+        });
+
+        // Category form submission
+        document.getElementById('add-category-form').addEventListener('submit', createCategory);
+
+        // Cancel button
+        document.getElementById('cancel-category-btn').addEventListener('click', () => {
+            document.getElementById('add-category-modal').style.display = 'none';
+        });
     });
 
     async function loadStoreData(storeId) {
@@ -498,8 +557,8 @@
         try {
             const response = await fetch(`/api/store-products?storeId=${storeId}`);
             const data = await response.json();
-
             const tbody = document.getElementById('products-list');
+
             if (data.success && data.products.length > 0) {
                 tbody.innerHTML = data.products.map(product => `
                         <tr>
@@ -527,8 +586,8 @@
         try {
             const response = await fetch(`/api/store-orders?storeId=${storeId}`);
             const data = await response.json();
-
             const tbody = document.getElementById('orders-list');
+
             if (data.success && data.orders.length > 0) {
                 tbody.innerHTML = data.orders.map(order => {
                     const total = order.items ? order.items.reduce((sum, item) =>
@@ -559,8 +618,8 @@
         try {
             const response = await fetch(`/api/store-employees?storeId=${storeId}`);
             const data = await response.json();
-
             const tbody = document.getElementById('employees-list');
+
             if (data.success && data.employees.length > 0) {
                 tbody.innerHTML = data.employees.map(emp => `
                         <tr>
@@ -591,14 +650,77 @@
 
             if (data.success) {
                 const options = data.categories.map(cat =>
-                    `<option value="${cat.category_id}">${cat.name}</option>`
+                    `<option value="${cat.category_id}">${cat.name}${cat.parent_name ? ` (subcategory of ${cat.parent_name})` : ''}</option>`
                 ).join('');
 
                 document.getElementById('product-category').innerHTML = '<option value="">Select Category</option>' + options;
                 document.getElementById('edit-product-category').innerHTML = '<option value="">Select Category</option>' + options;
+
+                // Also load for category parent dropdown
+                const parentOptions = data.categories.map(cat =>
+                    `<option value="${cat.category_id}">${cat.name}</option>`
+                ).join('');
+                document.getElementById('category-parent').innerHTML = '<option value="">None (Top Level Category)</option>' + parentOptions;
             }
         } catch (error) {
             console.error('Error loading categories:', error);
+        }
+    }
+
+    function openCategoryModal(source = 'add') {
+        // Store which form triggered this
+        document.getElementById('add-category-modal').dataset.source = source;
+        document.getElementById('add-category-modal').style.display = 'block';
+        document.getElementById('add-category-form').reset();
+    }
+
+    async function createCategory(e) {
+        e.preventDefault();
+
+        const categoryName = document.getElementById('category-name').value.trim();
+        const categoryDescription = document.getElementById('category-description').value.trim();
+        const parentId = document.getElementById('category-parent').value;
+
+        if (!categoryName) {
+            alert('Please enter a category name');
+            return;
+        }
+
+        const categoryData = {
+            name: categoryName,
+            description: categoryDescription,
+            parentId: parentId || null
+        };
+
+        try {
+            const response = await fetch('/api/create-category', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(categoryData)
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                alert(`Category "${categoryName}" created successfully!`);
+                document.getElementById('add-category-modal').style.display = 'none';
+
+                // Reload categories in all dropdowns
+                await loadCategories();
+
+                // Auto-select the new category if it came from add product form
+                const source = document.getElementById('add-category-modal').dataset.source;
+                if (source === 'edit') {
+                    document.getElementById('edit-product-category').value = data.category.id;
+                } else {
+                    document.getElementById('product-category').value = data.category.id;
+                }
+            } else {
+                alert(data.message || 'Failed to create category');
+            }
+        } catch (error) {
+            console.error('Error creating category:', error);
+            alert('An error occurred while creating the category');
         }
     }
 
@@ -606,6 +728,7 @@
         e.preventDefault();
 
         const storeId = document.getElementById('store-select').value;
+
         if (!storeId) {
             alert('Please select a store first');
             return;
@@ -678,6 +801,7 @@
         e.preventDefault();
 
         const storeId = document.getElementById('store-select').value;
+
         if (!storeId) {
             alert('Please select a store first');
             return;
@@ -685,6 +809,7 @@
 
         const password = document.getElementById('employee-password').value;
         const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+
         if (!passwordRegex.test(password)) {
             alert('Password must have at least 8 characters, including uppercase, lowercase, number and special character');
             return;
@@ -761,6 +886,7 @@
         e.preventDefault();
 
         const storeId = document.getElementById('store-select').value;
+
         const formData = {
             code: document.getElementById('edit-product-code').value,
             description: document.getElementById('edit-product-description').value,
@@ -859,6 +985,7 @@
         e.preventDefault();
 
         const storeId = document.getElementById('store-select').value;
+
         const formData = {
             employeeId: document.getElementById('edit-employee-id').value,
             storeId: storeId,
@@ -896,9 +1023,11 @@
         const type = document.getElementById('report-type').value;
 
         let startDate, endDate;
+
         if (period === 'custom') {
             startDate = document.getElementById('report-start').value;
             endDate = document.getElementById('report-end').value;
+
             if (!startDate || !endDate) {
                 alert('Please select start and end dates');
                 return;

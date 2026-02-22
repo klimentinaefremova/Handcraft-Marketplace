@@ -23,45 +23,93 @@ const database = new sqlite3.Database(dbPath, (err) => {
 // Enable foreign keys
 database.run('PRAGMA foreign_keys = ON');
 
-// Helper function to ensure general category exists
+// Helper function to ensure general category exists with ID 1
 function ensureGeneralCategory(callback) {
-    database.get('SELECT category_id FROM category WHERE name = ?', ['General'], (err, row) => {
+    // First check if category with ID 1 exists and is named 'General'
+    database.get('SELECT category_id, name FROM category WHERE category_id = 1', [], (err, row) => {
         if (err) {
             callback(err);
-        } else if (!row) {
+        } else if (row && row.name === 'General') {
+            // Category with ID 1 already exists and is General
+            console.log('✅ General category exists with ID: 1');
+            callback(null);
+        } else if (row && row.name !== 'General') {
+            // Category with ID 1 exists but has different name - update it
             database.run(
-                'INSERT INTO category (name, description) VALUES (?, ?)',
+                'UPDATE category SET name = ?, description = ? WHERE category_id = 1',
                 ['General', 'General products category'],
                 function(err) {
-                    callback(err);
+                    if (err) {
+                        callback(err);
+                    } else {
+                        console.log('✅ Updated category ID 1 to General');
+                        callback(null);
+                    }
                 }
             );
         } else {
-            callback(null);
+            // No category with ID 1 exists, create it
+            // First, check if we need to reset the autoincrement sequence
+            database.run(
+                'INSERT INTO category (category_id, name, description) VALUES (1, ?, ?)',
+                ['General', 'General products category'],
+                function(err) {
+                    if (err) {
+                        // If insert fails, try without specifying ID (let SQLite assign it)
+                        database.run(
+                            'INSERT INTO category (name, description) VALUES (?, ?)',
+                            ['General', 'General products category'],
+                            function(err) {
+                                if (err) {
+                                    callback(err);
+                                } else {
+                                    console.log('✅ Created General category with auto-assigned ID');
+                                    callback(null);
+                                }
+                            }
+                        );
+                    } else {
+                        console.log('✅ Created General category with ID: 1');
+                        callback(null);
+                    }
+                }
+            );
         }
     });
 }
 
 // Helper function to get the General category ID
 function getGeneralCategoryId(callback) {
-    database.get('SELECT category_id FROM category WHERE name = ?', ['General'], (err, row) => {
+    // First try to get category with ID 1 that is named 'General'
+    database.get('SELECT category_id FROM category WHERE category_id = 1 AND name = ?', ['General'], (err, row) => {
         if (err) {
             callback(err, null);
         } else if (row) {
             callback(null, row.category_id);
         } else {
-            // Create General category if it doesn't exist
-            database.run(
-                'INSERT INTO category (name, description) VALUES (?, ?)',
-                ['General', 'General products category'],
-                function(err) {
-                    if (err) {
-                        callback(err, null);
-                    } else {
-                        callback(null, this.lastID);
-                    }
+            // If not found with ID 1, try to find by name
+            database.get('SELECT category_id FROM category WHERE name = ?', ['General'], (err, row) => {
+                if (err) {
+                    callback(err, null);
+                } else if (row) {
+                    callback(null, row.category_id);
+                } else {
+                    // Create General category if it doesn't exist
+                    database.run(
+                        'INSERT INTO category (name, description) VALUES (?, ?)',
+                        ['General', 'General products category'],
+                        function(err) {
+                            if (err) {
+                                callback(err, null);
+                            } else {
+                                const newId = this.lastID;
+                                console.log(`✅ Created new General category with ID: ${newId}`);
+                                callback(null, newId);
+                            }
+                        }
+                    );
                 }
-            );
+            });
         }
     });
 }
@@ -83,8 +131,8 @@ function getUserById(id, callback) {
         // Get user roles
         database.all(
             `SELECT r.* FROM roles r
-             JOIN user_roles ur ON r.role_id = ur.role_id
-             WHERE ur.user_id = ?`,
+       JOIN user_roles ur ON r.role_id = ur.role_id
+       WHERE ur.user_id = ?`,
             [id],
             (err, roles) => {
                 if (err) {
@@ -183,12 +231,12 @@ function updatePasswordAndClearForce(userId, newPassword, callback) {
 // Product functions
 function getProducts(categoryId, searchTerm, callback) {
     let query = `
-        SELECT p.*, c.name as category_name, s.name as store_name
-        FROM product p
-        JOIN category c ON p.category_id = c.category_id
-        JOIN store s ON p.store_id = s.store_id
-        WHERE 1=1
-    `;
+    SELECT p.*, c.name as category_name, s.name as store_name
+    FROM product p
+    JOIN category c ON p.category_id = c.category_id
+    JOIN store s ON p.store_id = s.store_id
+    WHERE 1=1
+  `;
     const params = [];
 
     if (categoryId && categoryId !== 'all') {
@@ -213,10 +261,10 @@ function getProducts(categoryId, searchTerm, callback) {
 function getProductById(id, callback) {
     database.get(
         `SELECT p.*, c.name as category_name, s.name as store_name
-         FROM product p
-         JOIN category c ON p.category_id = c.category_id
-         JOIN store s ON p.store_id = s.store_id
-         WHERE p.id = ?`,
+     FROM product p
+     JOIN category c ON p.category_id = c.category_id
+     JOIN store s ON p.store_id = s.store_id
+     WHERE p.id = ?`,
         [id],
         (err, row) => {
             if (err || !row) {
@@ -255,10 +303,10 @@ function getProductById(id, callback) {
 function getProductByCode(code, callback) {
     database.get(
         `SELECT p.*, c.name as category_name, s.name as store_name
-         FROM product p
-         JOIN category c ON p.category_id = c.category_id
-         JOIN store s ON p.store_id = s.store_id
-         WHERE p.code = ?`,
+     FROM product p
+     JOIN category c ON p.category_id = c.category_id
+     JOIN store s ON p.store_id = s.store_id
+     WHERE p.code = ?`,
         [code],
         (err, row) => {
             if (err || !row) {
@@ -316,9 +364,9 @@ function addProduct(personalId, productData, callback) {
 
         database.run(
             `INSERT INTO product (
-                id, code, description, price, availability, weight, dimensions,
-                production_time, category_id, store_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+        id, code, description, price, availability, weight, dimensions,
+        production_time, category_id, store_id, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
             [
                 'PROD_' + Date.now().toString().slice(-8), // Generate a unique ID
                 productData.code,
@@ -340,7 +388,7 @@ function addProduct(personalId, productData, callback) {
                     // Log the change
                     database.run(
                         `INSERT INTO "change" (date_and_time, product_code, changes)
-                         VALUES (datetime('now'), ?, ?)`,
+             VALUES (datetime('now'), ?, ?)`,
                         [productData.code, 'Product created'],
                         function(err) {
                             if (err) {
@@ -352,7 +400,7 @@ function addProduct(personalId, productData, callback) {
                     // Log who made the change
                     database.run(
                         `INSERT INTO makes_change (personal_id, change_date_time, product_code)
-                         VALUES (?, datetime('now'), ?)`,
+             VALUES (?, datetime('now'), ?)`,
                         [personalId, productData.code],
                         function(err) {
                             if (err) {
@@ -366,7 +414,7 @@ function addProduct(personalId, productData, callback) {
                         productData.images.forEach((imageUrl, index) => {
                             database.run(
                                 `INSERT INTO image (product_code, image_url, is_primary)
-                                 VALUES (?, ?, ?)`,
+                 VALUES (?, ?, ?)`,
                                 [productData.code, imageUrl, index === 0 ? 1 : 0],
                                 function(err) {
                                     if (err) {
@@ -408,26 +456,32 @@ function updateProduct(personalId, productData, callback) {
         updates.push('description = ?');
         params.push(productData.description);
     }
+
     if (productData.price !== undefined) {
         updates.push('price = ?');
         params.push(productData.price);
     }
+
     if (productData.availability !== undefined) {
         updates.push('availability = ?');
         params.push(productData.availability);
     }
+
     if (productData.weight !== undefined) {
         updates.push('weight = ?');
         params.push(productData.weight);
     }
+
     if (productData.dimensions !== undefined) {
         updates.push('dimensions = ?');
         params.push(productData.dimensions);
     }
+
     if (productData.production_time !== undefined) {
         updates.push('production_time = ?');
         params.push(productData.production_time);
     }
+
     if (productData.category_id !== undefined) {
         updates.push('category_id = ?');
         params.push(productData.category_id);
@@ -451,7 +505,7 @@ function updateProduct(personalId, productData, callback) {
                 const changesDesc = `Product updated: ${updates.join(', ')}`;
                 database.run(
                     `INSERT INTO "change" (date_and_time, product_code, changes)
-                     VALUES (datetime('now'), ?, ?)`,
+           VALUES (datetime('now'), ?, ?)`,
                     [productData.code, changesDesc],
                     function(err) {
                         if (err) {
@@ -460,7 +514,7 @@ function updateProduct(personalId, productData, callback) {
                         // Log who made the change
                         database.run(
                             `INSERT INTO makes_change (personal_id, change_date_time, product_code)
-                             VALUES (?, datetime('now'), ?)`,
+               VALUES (?, datetime('now'), ?)`,
                             [personalId, productData.code],
                             function(err) {
                                 if (err) {
@@ -519,7 +573,7 @@ function deleteProduct(productCode, storeId, personalId, callback) {
         // Log the deletion
         database.run(
             `INSERT INTO "change" (date_and_time, product_code, changes)
-             VALUES (datetime('now'), ?, ?)`,
+       VALUES (datetime('now'), ?, ?)`,
             [productCode, 'Product deleted'],
             function(err) {
                 if (err) {
@@ -531,7 +585,7 @@ function deleteProduct(productCode, storeId, personalId, callback) {
                 // Log who deleted it
                 database.run(
                     `INSERT INTO makes_change (personal_id, change_date_time, product_code)
-                     VALUES (?, datetime('now'), ?)`,
+           VALUES (?, datetime('now'), ?)`,
                     [personalId, productCode],
                     function(err) {
                         if (err) {
@@ -570,9 +624,9 @@ function getCategories(callback) {
 function getCategoriesWithParents(callback) {
     database.all(
         `SELECT c1.*, c2.name as parent_name
-         FROM category c1
-         LEFT JOIN category c2 ON c1.parent_category_id = c2.category_id
-         ORDER BY c1.name`,
+     FROM category c1
+     LEFT JOIN category c2 ON c1.parent_category_id = c2.category_id
+     ORDER BY c1.name`,
         [],
         (err, rows) => {
             callback(err, rows || []);
@@ -609,10 +663,10 @@ function getStores(callback) {
 function getStoreProducts(storeId, callback) {
     database.all(
         `SELECT p.*, c.name as category_name
-         FROM product p
-         JOIN category c ON p.category_id = c.category_id
-         WHERE p.store_id = ?
-         ORDER BY p.code`,
+     FROM product p
+     JOIN category c ON p.category_id = c.category_id
+     WHERE p.store_id = ?
+     ORDER BY p.code`,
         [storeId],
         (err, rows) => {
             if (err) {
@@ -627,10 +681,10 @@ function getStoreProducts(storeId, callback) {
 function getStoreOrders(storeId, callback) {
     database.all(
         `SELECT o.*, c.first_name, c.last_name
-         FROM "order" o
-         JOIN client c ON o.client_id = c.client_id
-         WHERE o.store_id = ?
-         ORDER BY o.order_date DESC`,
+     FROM "order" o
+     JOIN client c ON o.client_id = c.client_id
+     WHERE o.store_id = ?
+     ORDER BY o.order_date DESC`,
         [storeId],
         (err, rows) => {
             if (err) {
@@ -648,9 +702,9 @@ function getStoreOrders(storeId, callback) {
                 orders.forEach(order => {
                     database.all(
                         `SELECT oi.*, p.description
-                         FROM order_items oi
-                         JOIN product p ON oi.product_code = p.code
-                         WHERE oi.order_num = ?`,
+             FROM order_items oi
+             JOIN product p ON oi.product_code = p.code
+             WHERE oi.order_num = ?`,
                         [order.order_num],
                         (err, items) => {
                             if (!err) {
@@ -658,7 +712,6 @@ function getStoreOrders(storeId, callback) {
                             } else {
                                 order.items = [];
                             }
-
                             completed++;
                             if (completed === orders.length) {
                                 callback(null, orders);
@@ -674,11 +727,11 @@ function getStoreOrders(storeId, callback) {
 function getStoreEmployees(storeId, callback) {
     database.all(
         `SELECT p.*, e.date_of_hire, perm.type as permission_type, perm.authorisation
-         FROM personal p
-         JOIN works_in_store w ON p.id = w.personal_id
-         LEFT JOIN employees e ON p.id = e.employee_id
-         LEFT JOIN permissions perm ON p.id = perm.personal_id
-         WHERE w.store_id = ?`,
+     FROM personal p
+     JOIN works_in_store w ON p.id = w.personal_id
+     LEFT JOIN employees e ON p.id = e.employee_id
+     LEFT JOIN permissions perm ON p.id = perm.personal_id
+     WHERE w.store_id = ?`,
         [storeId],
         (err, rows) => {
             callback(err, rows || []);
@@ -689,8 +742,8 @@ function getStoreEmployees(storeId, callback) {
 function getStoreReports(storeId, callback) {
     database.all(
         `SELECT * FROM report
-         WHERE store_id = ?
-         ORDER BY generated_at DESC`,
+     WHERE store_id = ?
+     ORDER BY generated_at DESC`,
         [storeId],
         (err, rows) => {
             callback(err, rows || []);
@@ -718,9 +771,9 @@ function getStoreStats(storeId, callback) {
                     // Get total revenue
                     database.get(
                         `SELECT SUM(oi.price * oi.quantity) as total_revenue
-                         FROM order_items oi
-                         JOIN "order" o ON oi.order_num = o.order_num
-                         WHERE o.store_id = ?`,
+             FROM order_items oi
+             JOIN "order" o ON oi.order_num = o.order_num
+             WHERE o.store_id = ?`,
                         [storeId],
                         (err, row) => {
                             stats.total_revenue = row && row.total_revenue ? row.total_revenue : 0;
@@ -728,13 +781,12 @@ function getStoreStats(storeId, callback) {
                             // Get average rating
                             database.get(
                                 `SELECT AVG(rating) as avg_rating
-                                 FROM review r
-                                 JOIN product p ON r.product_code = p.code
-                                 WHERE p.store_id = ?`,
+                 FROM review r
+                 JOIN product p ON r.product_code = p.code
+                 WHERE p.store_id = ?`,
                                 [storeId],
                                 (err, row) => {
                                     stats.avg_rating = row && row.avg_rating ? row.avg_rating : 0;
-
                                     callback(null, stats);
                                 }
                             );
@@ -756,8 +808,8 @@ function createOrderNew(orderData, callback) {
 
         database.run(
             `INSERT INTO "order" (order_num, client_id, order_date, quantity, payment_method,
-                                 discount, delivery_address, store_id)
-             VALUES (?, ?, datetime('now'), ?, ?, ?, ?, ?)`,
+        discount, delivery_address, store_id)
+       VALUES (?, ?, datetime('now'), ?, ?, ?, ?, ?)`,
             [
                 orderData.order_num,
                 orderData.client_id,
@@ -786,7 +838,7 @@ function createOrderNew(orderData, callback) {
                 items.forEach(item => {
                     database.run(
                         `INSERT INTO order_items (order_num, product_code, quantity, price)
-                         VALUES (?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?)`,
                         [orderData.order_num, item.product_code, item.quantity, item.price],
                         function(err) {
                             if (err) {
@@ -816,10 +868,10 @@ function createOrderNew(orderData, callback) {
 function getOrdersByClient(clientId, callback) {
     database.all(
         `SELECT o.*, s.name as store_name
-         FROM "order" o
-         JOIN store s ON o.store_id = s.store_id
-         WHERE o.client_id = ?
-         ORDER BY o.order_date DESC`,
+     FROM "order" o
+     JOIN store s ON o.store_id = s.store_id
+     WHERE o.client_id = ?
+     ORDER BY o.order_date DESC`,
         [clientId],
         (err, rows) => {
             if (err) {
@@ -837,9 +889,9 @@ function getOrdersByClient(clientId, callback) {
                 orders.forEach(order => {
                     database.all(
                         `SELECT oi.*, p.description
-                         FROM order_items oi
-                         JOIN product p ON oi.product_code = p.code
-                         WHERE oi.order_num = ?`,
+             FROM order_items oi
+             JOIN product p ON oi.product_code = p.code
+             WHERE oi.order_num = ?`,
                         [order.order_num],
                         (err, items) => {
                             if (!err) {
@@ -847,7 +899,6 @@ function getOrdersByClient(clientId, callback) {
                             } else {
                                 order.items = [];
                             }
-
                             completed++;
                             if (completed === orders.length) {
                                 callback(null, orders);
@@ -863,10 +914,10 @@ function getOrdersByClient(clientId, callback) {
 function getAllOrders(callback) {
     database.all(
         `SELECT o.*, c.first_name, c.last_name, s.name as store_name
-         FROM "order" o
-         JOIN client c ON o.client_id = c.client_id
-         JOIN store s ON o.store_id = s.store_id
-         ORDER BY o.order_date DESC`,
+     FROM "order" o
+     JOIN client c ON o.client_id = c.client_id
+     JOIN store s ON o.store_id = s.store_id
+     ORDER BY o.order_date DESC`,
         [],
         (err, rows) => {
             callback(err, rows || []);
@@ -878,7 +929,7 @@ function getAllOrders(callback) {
 function createReviewNew(reviewData, callback) {
     database.run(
         `INSERT INTO review (review_id, client_id, product_code, rating, comment, review_date)
-         VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+     VALUES (?, ?, ?, ?, ?, datetime('now'))`,
         [
             'REV' + Date.now().toString().slice(-8),
             reviewData.client_id,
@@ -900,7 +951,7 @@ function createReviewNew(reviewData, callback) {
 function createRequest(requestData, callback) {
     database.run(
         `INSERT INTO request (request_num, date_and_time, problem, client_id, store_id)
-         VALUES (?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?)`,
         [
             requestData.request_num,
             requestData.date_and_time,
@@ -922,7 +973,7 @@ function createRequest(requestData, callback) {
 function createRefund(refundData, callback) {
     database.run(
         `INSERT INTO refund (refund_id, order_num, amount, reason, request_date)
-         VALUES (?, ?, ?, ?, datetime('now'))`,
+     VALUES (?, ?, ?, ?, datetime('now'))`,
         [
             refundData.refund_id,
             refundData.order_num,
@@ -950,10 +1001,10 @@ function getEmployeeTasks(personalId, storeId, callback) {
     // Get pending orders
     database.all(
         `SELECT o.*, c.first_name, c.last_name
-         FROM "order" o
-         JOIN client c ON o.client_id = c.client_id
-         WHERE o.store_id = ? AND o.status = 'pending'
-         ORDER BY o.order_date ASC`,
+     FROM "order" o
+     JOIN client c ON o.client_id = c.client_id
+     WHERE o.store_id = ? AND o.status = 'pending'
+     ORDER BY o.order_date ASC`,
         [storeId],
         (err, rows) => {
             if (!err) {
@@ -963,10 +1014,10 @@ function getEmployeeTasks(personalId, storeId, callback) {
             // Get pending requests
             database.all(
                 `SELECT r.*, c.first_name, c.last_name
-                 FROM request r
-                 JOIN client c ON r.client_id = c.client_id
-                 WHERE r.store_id = ? AND r.status = 'pending'
-                 ORDER BY r.date_and_time ASC`,
+         FROM request r
+         JOIN client c ON r.client_id = c.client_id
+         WHERE r.store_id = ? AND r.status = 'pending'
+         ORDER BY r.date_and_time ASC`,
                 [storeId],
                 (err, rows) => {
                     if (!err) {
@@ -976,11 +1027,11 @@ function getEmployeeTasks(personalId, storeId, callback) {
                     // Get pending refunds
                     database.all(
                         `SELECT rf.*, o.client_id, c.first_name, c.last_name
-                         FROM refund rf
-                         JOIN "order" o ON rf.order_num = o.order_num
-                         JOIN client c ON o.client_id = c.client_id
-                         WHERE o.store_id = ? AND rf.status = 'pending'
-                         ORDER BY rf.request_date ASC`,
+             FROM refund rf
+             JOIN "order" o ON rf.order_num = o.order_num
+             JOIN client c ON o.client_id = c.client_id
+             WHERE o.store_id = ? AND rf.status = 'pending'
+             ORDER BY rf.request_date ASC`,
                         [storeId],
                         (err, rows) => {
                             if (!err) {
@@ -1009,9 +1060,9 @@ function getClientStats(clientId, callback) {
             // Get total spent
             database.get(
                 `SELECT SUM(oi.price * oi.quantity) as total_spent
-                 FROM order_items oi
-                 JOIN "order" o ON oi.order_num = o.order_num
-                 WHERE o.client_id = ?`,
+         FROM order_items oi
+         JOIN "order" o ON oi.order_num = o.order_num
+         WHERE o.client_id = ?`,
                 [clientId],
                 (err, row) => {
                     stats.total_spent = row && row.total_spent ? row.total_spent : 0;
@@ -1029,7 +1080,6 @@ function getClientStats(clientId, callback) {
                                 [clientId],
                                 (err, row) => {
                                     stats.delivered_orders = row ? row.delivered_orders : 0;
-
                                     callback(null, stats);
                                 }
                             );
@@ -1048,8 +1098,8 @@ function getAllUsers(callback) {
     // Get client users
     database.all(
         `SELECT client_id as id, first_name, last_name, email, 'client' as user_type
-         FROM client
-         ORDER BY client_id`,
+     FROM client
+     ORDER BY client_id`,
         [],
         (err, rows) => {
             if (!err) {
@@ -1059,13 +1109,13 @@ function getAllUsers(callback) {
             // Get personal users
             database.all(
                 `SELECT p.id, p.first_name, p.last_name, p.email,
-                        CASE WHEN b.boss_id IS NOT NULL THEN 'store_owner'
-                             WHEN e.employee_id IS NOT NULL THEN 'store_employee'
-                             ELSE 'personal' END as user_type
-                 FROM personal p
-                 LEFT JOIN boss b ON p.id = b.boss_id
-                 LEFT JOIN employees e ON p.id = e.employee_id
-                 ORDER BY p.id`,
+          CASE WHEN b.boss_id IS NOT NULL THEN 'store_owner'
+               WHEN e.employee_id IS NOT NULL THEN 'store_employee'
+               ELSE 'personal' END as user_type
+         FROM personal p
+         LEFT JOIN boss b ON p.id = b.boss_id
+         LEFT JOIN employees e ON p.id = e.employee_id
+         ORDER BY p.id`,
                 [],
                 (err, rows) => {
                     if (!err) {
@@ -1075,8 +1125,8 @@ function getAllUsers(callback) {
                     // Get system users
                     database.all(
                         `SELECT id, username, email, user_type
-                         FROM users
-                         ORDER BY id`,
+             FROM users
+             ORDER BY id`,
                         [],
                         (err, rows) => {
                             if (!err) {
@@ -1095,7 +1145,7 @@ function getAllUsers(callback) {
 function logAudit(userId, action, resourceType, resourceId, details, ipAddress) {
     database.run(
         `INSERT INTO audit_log (user_id, action, resource_type, resource_id, details, ip_address)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?)`,
         [userId, action, resourceType, resourceId, details, ipAddress],
         (err) => {
             if (err) {
