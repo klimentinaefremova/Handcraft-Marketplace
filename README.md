@@ -10,5 +10,3 @@
 ## Author:
 
 Klimentina Efremova
-
-Aida Balikj
