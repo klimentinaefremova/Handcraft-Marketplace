@@ -2,7 +2,12 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
 const dbPath = path.join(__dirname, 'database', 'handcraft.db');
-const db = new sqlite3.Database(dbPath);
+const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+        console.error('Error opening database:', err.message);
+        process.exit(1);
+    }
+});
 
 console.log('\n🎨 HANDCRAFT MARKETPLACE - DATABASE CONTENTS\n');
 
@@ -24,45 +29,84 @@ function tableExists(tableName, callback) {
     );
 }
 
-// Display CLIENTS table
-console.log('\n👤 CLIENTS TABLE:');
-console.log('================================================================================');
-tableExists('client', (exists) => {
-    if (!exists) {
-        console.log('Table does not exist');
-        checkNext();
-        return;
+// Main execution chain
+function executeChecks() {
+    let currentCheck = 0;
+
+    const checks = [
+        { name: 'clients', func: checkClients },
+        { name: 'personal', func: checkPersonal },
+        { name: 'store', func: checkStore },
+        { name: 'product', func: checkProduct },
+        { name: 'category', func: checkCategory },
+        { name: 'works_in_store', func: checkWorksInStore },
+        { name: 'permissions', func: checkPermissions },
+        { name: 'employees', func: checkEmployees },
+        { name: 'boss', func: checkBoss },
+        { name: 'order', func: checkOrder },
+        { name: 'report', func: checkReport },
+        { name: 'refund', func: checkRefund },
+        { name: 'image', func: checkImage },
+        { name: 'color', func: checkColor }
+    ];
+
+    function next() {
+        currentCheck++;
+        if (currentCheck < checks.length) {
+            checks[currentCheck].func(next);
+        } else {
+            finish();
+        }
     }
 
-    db.all('SELECT * FROM client', [], (err, rows) => {
-        if (err) {
-            console.log(`Error: ${err.message}`);
-            checkNext();
+    // Start with first check
+    checks[0].func(next);
+}
+
+// Display CLIENTS table
+function checkClients(next) {
+    console.log('\n👤 CLIENTS TABLE:');
+    console.log('================================================================================');
+
+    tableExists('client', (exists) => {
+        if (!exists) {
+            console.log('Table does not exist\n');
+            if (next) next();
             return;
         }
 
-        if (!rows || rows.length === 0) {
-            console.log('No clients found');
-        } else {
-            console.log(`Total: ${rows.length} clients\n`);
-            rows.forEach((client, index) => {
-                console.log(`ID: ${client.client_id} | Name: ${client.first_name || ''} ${client.last_name || ''}`);
-                console.log(`Email: ${client.email || 'N/A'}`);
-                if (index < rows.length - 1) console.log('-'.repeat(80));
-            });
-        }
-        checkNext();
+        db.all('SELECT * FROM client', [], (err, rows) => {
+            if (err) {
+                console.log(`Error: ${err.message}\n`);
+                if (next) next();
+                return;
+            }
+
+            if (!rows || rows.length === 0) {
+                console.log('No clients found\n');
+            } else {
+                console.log(`Total: ${rows.length} clients\n`);
+                rows.forEach((client, index) => {
+                    console.log(`ID: ${client.client_id} | Name: ${client.first_name || ''} ${client.last_name || ''}`);
+                    console.log(`Email: ${client.email || 'N/A'}`);
+                    if (index < rows.length - 1) console.log('-'.repeat(80));
+                });
+                console.log(); // Add blank line after table
+            }
+            if (next) next();
+        });
     });
-});
+}
 
 // Display PERSONAL table
-function checkPersonal() {
+function checkPersonal(next) {
     console.log('\n👔 PERSONAL TABLE (STORE OWNERS/EMPLOYEES):');
     console.log('================================================================================');
+
     tableExists('personal', (exists) => {
         if (!exists) {
-            console.log('Table does not exist');
-            checkStore();
+            console.log('Table does not exist\n');
+            if (next) next();
             return;
         }
 
@@ -76,13 +120,13 @@ function checkPersonal() {
             LEFT JOIN employees e ON p.id = e.employee_id
         `, [], (err, rows) => {
             if (err) {
-                console.log(`Error: ${err.message}`);
-                checkStore();
+                console.log(`Error: ${err.message}\n`);
+                if (next) next();
                 return;
             }
 
             if (!rows || rows.length === 0) {
-                console.log('No personal records found');
+                console.log('No personal records found\n');
             } else {
                 console.log(`Total: ${rows.length} personal records\n`);
                 rows.forEach((person, index) => {
@@ -90,32 +134,34 @@ function checkPersonal() {
                     console.log(`Email: ${person.email || 'N/A'} | SSN: ${person.ssn || 'N/A'}`);
                     if (index < rows.length - 1) console.log('-'.repeat(80));
                 });
+                console.log();
             }
-            checkStore();
+            if (next) next();
         });
     });
 }
 
 // Display STORE table
-function checkStore() {
+function checkStore(next) {
     console.log('\n🏪 STORE TABLE:');
     console.log('================================================================================');
+
     tableExists('store', (exists) => {
         if (!exists) {
-            console.log('Table does not exist');
-            checkProduct();
+            console.log('Table does not exist\n');
+            if (next) next();
             return;
         }
 
         db.all('SELECT * FROM store', [], (err, rows) => {
             if (err) {
-                console.log(`Error: ${err.message}`);
-                checkProduct();
+                console.log(`Error: ${err.message}\n`);
+                if (next) next();
                 return;
             }
 
             if (!rows || rows.length === 0) {
-                console.log('No stores found');
+                console.log('No stores found\n');
             } else {
                 console.log(`Total: ${rows.length} stores\n`);
                 rows.forEach((store, index) => {
@@ -125,20 +171,22 @@ function checkStore() {
                     console.log(`Founded: ${formatDate(store.date_of_founding)}`);
                     if (index < rows.length - 1) console.log('-'.repeat(80));
                 });
+                console.log();
             }
-            checkProduct();
+            if (next) next();
         });
     });
 }
 
 // Display PRODUCT table
-function checkProduct() {
+function checkProduct(next) {
     console.log('\n🛍️ PRODUCT TABLE:');
     console.log('================================================================================');
+
     tableExists('product', (exists) => {
         if (!exists) {
-            console.log('Table does not exist');
-            checkCategory();
+            console.log('Table does not exist\n');
+            if (next) next();
             return;
         }
 
@@ -148,13 +196,13 @@ function checkProduct() {
             LEFT JOIN category c ON p.category_id = c.category_id
         `, [], (err, rows) => {
             if (err) {
-                console.log(`Error: ${err.message}`);
-                checkCategory();
+                console.log(`Error: ${err.message}\n`);
+                if (next) next();
                 return;
             }
 
             if (!rows || rows.length === 0) {
-                console.log('No products found');
+                console.log('No products found\n');
             } else {
                 console.log(`Total: ${rows.length} products\n`);
                 rows.forEach((product, index) => {
@@ -164,20 +212,22 @@ function checkProduct() {
                     console.log(`Available: ${product.availability || '0'} | Weight: ${product.weight || '0'}kg`);
                     if (index < rows.length - 1) console.log('-'.repeat(80));
                 });
+                console.log();
             }
-            checkCategory();
+            if (next) next();
         });
     });
 }
 
 // Display CATEGORY table
-function checkCategory() {
+function checkCategory(next) {
     console.log('\n📁 CATEGORY TABLE:');
     console.log('================================================================================');
+
     tableExists('category', (exists) => {
         if (!exists) {
-            console.log('Table does not exist');
-            checkWorksInStore();
+            console.log('Table does not exist\n');
+            if (next) next();
             return;
         }
 
@@ -187,13 +237,13 @@ function checkCategory() {
             LEFT JOIN category c2 ON c1.parent_category_id = c2.category_id
         `, [], (err, rows) => {
             if (err) {
-                console.log(`Error: ${err.message}`);
-                checkWorksInStore();
+                console.log(`Error: ${err.message}\n`);
+                if (next) next();
                 return;
             }
 
             if (!rows || rows.length === 0) {
-                console.log('No categories found');
+                console.log('No categories found\n');
             } else {
                 console.log(`Total: ${rows.length} categories\n`);
                 rows.forEach((cat, index) => {
@@ -202,20 +252,22 @@ function checkCategory() {
                     console.log(`Description: ${cat.description || 'No description'}`);
                     if (index < rows.length - 1) console.log('-'.repeat(80));
                 });
+                console.log();
             }
-            checkWorksInStore();
+            if (next) next();
         });
     });
 }
 
 // Display WORKS_IN_STORE table
-function checkWorksInStore() {
+function checkWorksInStore(next) {
     console.log('\n🔗 WORKS_IN_STORE TABLE:');
     console.log('================================================================================');
+
     tableExists('works_in_store', (exists) => {
         if (!exists) {
-            console.log('Table does not exist');
-            checkPermissions();
+            console.log('Table does not exist\n');
+            if (next) next();
             return;
         }
 
@@ -226,13 +278,13 @@ function checkWorksInStore() {
             LEFT JOIN store s ON w.store_id = s.store_id
         `, [], (err, rows) => {
             if (err) {
-                console.log(`Error: ${err.message}`);
-                checkPermissions();
+                console.log(`Error: ${err.message}\n`);
+                if (next) next();
                 return;
             }
 
             if (!rows || rows.length === 0) {
-                console.log('No assignments found');
+                console.log('No assignments found\n');
             } else {
                 console.log(`Total: ${rows.length} assignments\n`);
                 rows.forEach((assign, index) => {
@@ -240,20 +292,22 @@ function checkWorksInStore() {
                     console.log(`Name: ${assign.first_name || ''} ${assign.last_name || ''} | Store: ${assign.store_name || 'N/A'}`);
                     if (index < rows.length - 1) console.log('-'.repeat(80));
                 });
+                console.log();
             }
-            checkPermissions();
+            if (next) next();
         });
     });
 }
 
 // Display PERMISSIONS table
-function checkPermissions() {
+function checkPermissions(next) {
     console.log('\n🔐 PERMISSIONS TABLE:');
     console.log('================================================================================');
+
     tableExists('permissions', (exists) => {
         if (!exists) {
-            console.log('Table does not exist');
-            checkEmployees();
+            console.log('Table does not exist\n');
+            if (next) next();
             return;
         }
 
@@ -263,13 +317,13 @@ function checkPermissions() {
             LEFT JOIN personal p ON perm.personal_id = p.id
         `, [], (err, rows) => {
             if (err) {
-                console.log(`Error: ${err.message}`);
-                checkEmployees();
+                console.log(`Error: ${err.message}\n`);
+                if (next) next();
                 return;
             }
 
             if (!rows || rows.length === 0) {
-                console.log('No permissions found');
+                console.log('No permissions found\n');
             } else {
                 console.log(`Total: ${rows.length} permissions\n`);
                 rows.forEach((perm, index) => {
@@ -277,20 +331,22 @@ function checkPermissions() {
                     console.log(`Type: ${perm.type || 'N/A'} | Authorization: ${perm.authorisation || 'N/A'}`);
                     if (index < rows.length - 1) console.log('-'.repeat(80));
                 });
+                console.log();
             }
-            checkEmployees();
+            if (next) next();
         });
     });
 }
 
 // Display EMPLOYEES table
-function checkEmployees() {
+function checkEmployees(next) {
     console.log('\n👷 EMPLOYEES TABLE:');
     console.log('================================================================================');
+
     tableExists('employees', (exists) => {
         if (!exists) {
-            console.log('Table does not exist');
-            checkBoss();
+            console.log('Table does not exist\n');
+            if (next) next();
             return;
         }
 
@@ -300,13 +356,13 @@ function checkEmployees() {
             LEFT JOIN personal p ON e.employee_id = p.id
         `, [], (err, rows) => {
             if (err) {
-                console.log(`Error: ${err.message}`);
-                checkBoss();
+                console.log(`Error: ${err.message}\n`);
+                if (next) next();
                 return;
             }
 
             if (!rows || rows.length === 0) {
-                console.log('No employees found');
+                console.log('No employees found\n');
             } else {
                 console.log(`Total: ${rows.length} employees\n`);
                 rows.forEach((emp, index) => {
@@ -314,20 +370,22 @@ function checkEmployees() {
                     console.log(`Email: ${emp.email || 'N/A'} | Date Hired: ${formatDate(emp.date_of_hire)}`);
                     if (index < rows.length - 1) console.log('-'.repeat(80));
                 });
+                console.log();
             }
-            checkBoss();
+            if (next) next();
         });
     });
 }
 
 // Display BOSS table
-function checkBoss() {
+function checkBoss(next) {
     console.log('\n👑 BOSS TABLE:');
     console.log('================================================================================');
+
     tableExists('boss', (exists) => {
         if (!exists) {
-            console.log('Table does not exist');
-            checkOrder();
+            console.log('Table does not exist\n');
+            if (next) next();
             return;
         }
 
@@ -337,13 +395,13 @@ function checkBoss() {
             LEFT JOIN personal p ON b.boss_id = p.id
         `, [], (err, rows) => {
             if (err) {
-                console.log(`Error: ${err.message}`);
-                checkOrder();
+                console.log(`Error: ${err.message}\n`);
+                if (next) next();
                 return;
             }
 
             if (!rows || rows.length === 0) {
-                console.log('No bosses found');
+                console.log('No bosses found\n');
             } else {
                 console.log(`Total: ${rows.length} bosses\n`);
                 rows.forEach((boss, index) => {
@@ -351,20 +409,22 @@ function checkBoss() {
                     console.log(`Email: ${boss.email || 'N/A'} | Signature: ${boss.signature || 'N/A'}`);
                     if (index < rows.length - 1) console.log('-'.repeat(80));
                 });
+                console.log();
             }
-            checkOrder();
+            if (next) next();
         });
     });
 }
 
 // Display ORDER table
-function checkOrder() {
+function checkOrder(next) {
     console.log('\n📦 ORDERS TABLE:');
     console.log('================================================================================');
+
     tableExists('order', (exists) => {
         if (!exists) {
-            console.log('Table does not exist');
-            checkReport();
+            console.log('Table does not exist\n');
+            if (next) next();
             return;
         }
 
@@ -375,13 +435,13 @@ function checkOrder() {
             LEFT JOIN store s ON o.store_id = s.store_id
         `, [], (err, rows) => {
             if (err) {
-                console.log(`Error: ${err.message}`);
-                checkReport();
+                console.log(`Error: ${err.message}\n`);
+                if (next) next();
                 return;
             }
 
             if (!rows || rows.length === 0) {
-                console.log('No orders found');
+                console.log('No orders found\n');
             } else {
                 console.log(`Total: ${rows.length} orders\n`);
                 rows.forEach((order, index) => {
@@ -391,32 +451,34 @@ function checkOrder() {
                     console.log(`Delivery: ${order.delivery_address ? order.delivery_address.substring(0, 30) + '...' : 'N/A'}`);
                     if (index < rows.length - 1) console.log('-'.repeat(80));
                 });
+                console.log();
             }
-            checkReport();
+            if (next) next();
         });
     });
 }
 
 // Display REPORT table
-function checkReport() {
+function checkReport(next) {
     console.log('\n📊 REPORTS TABLE:');
     console.log('================================================================================');
+
     tableExists('report', (exists) => {
         if (!exists) {
-            console.log('Table does not exist');
-            checkRefund();
+            console.log('Table does not exist\n');
+            if (next) next();
             return;
         }
 
         db.all('SELECT * FROM report', [], (err, rows) => {
             if (err) {
-                console.log(`Error: ${err.message}`);
-                checkRefund();
+                console.log(`Error: ${err.message}\n`);
+                if (next) next();
                 return;
             }
 
             if (!rows || rows.length === 0) {
-                console.log('No reports found');
+                console.log('No reports found\n');
             } else {
                 console.log(`Total: ${rows.length} reports\n`);
                 rows.forEach((report, index) => {
@@ -424,32 +486,34 @@ function checkReport() {
                     console.log(`Profit: $${report.overall_profit || '0.00'} | Signature: ${report.owner_signature || 'N/A'}`);
                     if (index < rows.length - 1) console.log('-'.repeat(80));
                 });
+                console.log();
             }
-            checkRefund();
+            if (next) next();
         });
     });
 }
 
 // Display REFUND table
-function checkRefund() {
+function checkRefund(next) {
     console.log('\n💰 REFUND TABLE:');
     console.log('================================================================================');
+
     tableExists('refund', (exists) => {
         if (!exists) {
-            console.log('Table does not exist');
-            checkImage();
+            console.log('Table does not exist\n');
+            if (next) next();
             return;
         }
 
         db.all('SELECT * FROM refund', [], (err, rows) => {
             if (err) {
-                console.log(`Error: ${err.message}`);
-                checkImage();
+                console.log(`Error: ${err.message}\n`);
+                if (next) next();
                 return;
             }
 
             if (!rows || rows.length === 0) {
-                console.log('No refunds found');
+                console.log('No refunds found\n');
             } else {
                 console.log(`Total: ${rows.length} refunds\n`);
                 rows.forEach((refund, index) => {
@@ -458,88 +522,93 @@ function checkRefund() {
                     console.log(`Reason: ${refund.reason || 'N/A'}`);
                     if (index < rows.length - 1) console.log('-'.repeat(80));
                 });
+                console.log();
             }
-            checkImage();
+            if (next) next();
         });
     });
 }
 
 // Display IMAGE table
-function checkImage() {
+function checkImage(next) {
     console.log('\n🖼️ IMAGE TABLE:');
     console.log('================================================================================');
+
     tableExists('image', (exists) => {
         if (!exists) {
-            console.log('Table does not exist');
-            checkColor();
+            console.log('Table does not exist\n');
+            if (next) next();
             return;
         }
 
         db.all('SELECT * FROM image', [], (err, rows) => {
             if (err) {
-                console.log(`Error: ${err.message}`);
-                checkColor();
+                console.log(`Error: ${err.message}\n`);
+                if (next) next();
                 return;
             }
 
             if (!rows || rows.length === 0) {
-                console.log('No images found');
+                console.log('No images found\n');
             } else {
                 console.log(`Total: ${rows.length} images\n`);
                 rows.forEach((image, index) => {
                     console.log(`Product Code: ${image.product_code || 'N/A'} | Image: ${image.image || 'N/A'}`);
                     if (index < rows.length - 1) console.log('-'.repeat(80));
                 });
+                console.log();
             }
-            checkColor();
+            if (next) next();
         });
     });
 }
 
 // Display COLOR table
-function checkColor() {
+function checkColor(next) {
     console.log('\n🎨 COLOR TABLE:');
     console.log('================================================================================');
+
     tableExists('color', (exists) => {
         if (!exists) {
-            console.log('Table does not exist');
-            finish();
+            console.log('Table does not exist\n');
+            if (next) next();
             return;
         }
 
         db.all('SELECT * FROM color', [], (err, rows) => {
             if (err) {
-                console.log(`Error: ${err.message}`);
-                finish();
+                console.log(`Error: ${err.message}\n`);
+                if (next) next();
                 return;
             }
 
             if (!rows || rows.length === 0) {
-                console.log('No colors found');
+                console.log('No colors found\n');
             } else {
                 console.log(`Total: ${rows.length} colors\n`);
                 rows.forEach((color, index) => {
                     console.log(`Product Code: ${color.product_code || 'N/A'} | Color: ${color.color || 'N/A'}`);
                     if (index < rows.length - 1) console.log('-'.repeat(80));
                 });
+                console.log();
             }
-            finish();
+            if (next) next();
         });
     });
 }
 
-// Start the chain of checks
-function checkNext() {
-    checkPersonal();
-}
-
+// Finish and close database
 function finish() {
-    console.log('\n' + '='.repeat(80));
+    console.log('='.repeat(80));
     console.log('✅ Database inspection complete');
     console.log('='.repeat(80) + '\n');
 
-    db.close();
+    db.close((err) => {
+        if (err) {
+            console.error('Error closing database:', err.message);
+        }
+    });
 }
 
-// Start with CLIENTS
-checkNext();
+// Start the execution chain
+executeChecks();

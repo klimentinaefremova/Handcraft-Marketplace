@@ -210,27 +210,64 @@ function getClientIp(req) {
         (req.connection.socket ? req.connection.socket.remoteAddress : null);
 }
 
+// ===== FIXED: requireAuth function to check both sessions and tempAdminSessions =====
 function requireAuth(req, res, callback) {
     const cookies = parseCookies(req);
     const sessionId = cookies.sessionId;
 
-    if (!sessionId || !sessions.has(sessionId)) {
+    console.log(`🔐 requireAuth - Session ID from cookie: ${sessionId || 'none'}`);
+    console.log(`🔐 requireAuth - Sessions map size: ${sessions.size}`);
+    console.log(`🔐 requireAuth - TempAdminSessions map size: ${tempAdminSessions.size}`);
+
+    // Check both regular sessions and temp admin sessions
+    if (!sessionId) {
+        console.log(`❌ requireAuth - No session cookie, redirecting to login`);
         res.writeHead(302, { 'Location': '/login.html' });
         res.end();
         return;
     }
 
-    const userId = sessions.get(sessionId);
+    // Check if session exists in regular sessions
+    if (sessions.has(sessionId)) {
+        const userId = sessions.get(sessionId);
+        console.log(`✅ requireAuth - Found in regular sessions, user: ${userId}`);
+        callback(userId);
+        return;
+    }
 
+    // Check if session exists in temp admin sessions
     if (tempAdminSessions.has(sessionId)) {
-        if (!req.url.includes('/change-password') && !req.url.includes('/api/force-change-password')) {
+        const userId = tempAdminSessions.get(sessionId);
+        console.log(`⚠️ requireAuth - Found in temp admin sessions, user: ${userId}`);
+
+        // For temp sessions, we need to check if the request is for allowed pages
+        // Allow access to change password page and API endpoints needed for password change
+        const allowedPaths = [
+            '/change-password.html',
+            '/api/force-change-password',
+            '/api/user',
+            '/style.css',
+            '/script.js',
+            '/images/'
+        ];
+
+        const isAllowed = allowedPaths.some(path => req.url.includes(path));
+
+        if (!isAllowed) {
+            console.log(`🔄 requireAuth - Redirecting to change password page`);
             res.writeHead(302, { 'Location': '/change-password.html?forced=true' });
             res.end();
             return;
         }
+
+        callback(userId);
+        return;
     }
 
-    callback(userId);
+    // Session not found in either map
+    console.log(`❌ requireAuth - Session ID ${sessionId} not found in any session map`);
+    res.writeHead(302, { 'Location': '/login.html' });
+    res.end();
 }
 
 function requireRole(roleName) {
@@ -1116,7 +1153,7 @@ const server = http.createServer((req, res) => {
         const cookies = parseCookies(req);
         const sessionId = cookies.sessionId;
 
-        if (!sessionId || !sessions.has(sessionId)) {
+        if (!sessionId || (!sessions.has(sessionId) && !tempAdminSessions.has(sessionId))) {
             res.writeHead(302, { 'Location': '/login.html' });
             res.end();
             return;
@@ -1138,8 +1175,14 @@ const server = http.createServer((req, res) => {
         const cookies = parseCookies(req);
         const sessionId = cookies.sessionId;
 
-        if (!sessionId || !sessions.has(sessionId)) {
+        if (!sessionId || (!sessions.has(sessionId) && !tempAdminSessions.has(sessionId))) {
             res.writeHead(302, { 'Location': '/login.html' });
+            res.end();
+            return;
+        }
+
+        if (tempAdminSessions.has(sessionId)) {
+            res.writeHead(302, { 'Location': '/change-password.html?forced=true' });
             res.end();
             return;
         }
@@ -1178,11 +1221,179 @@ const server = http.createServer((req, res) => {
 
         serveStaticFile(res, 'admin.html', 'text/html');
     } else if (pathname === '/store-owner.html') {
-        serveStaticFile(res, 'store-owner.html', 'text/html');
+        // Check if user is authenticated
+        const cookies = parseCookies(req);
+        const sessionId = cookies.sessionId;
+
+        console.log(`📄 Accessing store-owner.html - Session ID: ${sessionId || 'none'}`);
+
+        if (!sessionId || (!sessions.has(sessionId) && !tempAdminSessions.has(sessionId))) {
+            console.log(`❌ store-owner.html - No valid session, redirecting to login`);
+            res.writeHead(302, { 'Location': '/login.html' });
+            res.end();
+            return;
+        }
+
+        if (tempAdminSessions.has(sessionId)) {
+            console.log(`⚠️ store-owner.html - Temporary session, redirecting to change password`);
+            res.writeHead(302, { 'Location': '/change-password.html?forced=true' });
+            res.end();
+            return;
+        }
+
+        // Get user from session
+        const userId = sessions.get(sessionId);
+        console.log(`📄 store-owner.html - User ID from session: ${userId}`);
+
+        // Check if this is a store owner
+        if (userId.startsWith('personal_')) {
+            const personalId = userId.replace('personal_', '');
+
+            database.database.get(
+                'SELECT boss_id FROM boss WHERE boss_id = ?',
+                [personalId],
+                (err, boss) => {
+                    if (boss) {
+                        // Is a store owner, serve the page
+                        console.log(`✅ store-owner.html - User is a store owner, serving page`);
+                        serveStaticFile(res, 'store-owner.html', 'text/html');
+                    } else {
+                        // Not a store owner, redirect to appropriate page
+                        console.log(`❌ store-owner.html - User is not a store owner, redirecting`);
+                        res.writeHead(302, { 'Location': '/dashboard.html' });
+                        res.end();
+                    }
+                }
+            );
+        } else if (userId === '000000') {
+            // Admin trying to access store owner page
+            console.log(`❌ store-owner.html - Admin trying to access, redirecting to admin`);
+            res.writeHead(302, { 'Location': '/admin.html' });
+            res.end();
+        } else if (userId.startsWith('client_')) {
+            // Client trying to access store owner page
+            console.log(`❌ store-owner.html - Client trying to access, redirecting to client`);
+            res.writeHead(302, { 'Location': '/client-dashboard.html' });
+            res.end();
+        } else {
+            res.writeHead(302, { 'Location': '/dashboard.html' });
+            res.end();
+        }
     } else if (pathname === '/store-employee.html') {
-        serveStaticFile(res, 'store-employee.html', 'text/html');
+        // Check if user is authenticated
+        const cookies = parseCookies(req);
+        const sessionId = cookies.sessionId;
+
+        console.log(`📄 Accessing store-employee.html - Session ID: ${sessionId || 'none'}`);
+
+        if (!sessionId || (!sessions.has(sessionId) && !tempAdminSessions.has(sessionId))) {
+            console.log(`❌ store-employee.html - No valid session, redirecting to login`);
+            res.writeHead(302, { 'Location': '/login.html' });
+            res.end();
+            return;
+        }
+
+        if (tempAdminSessions.has(sessionId)) {
+            console.log(`⚠️ store-employee.html - Temporary session, redirecting to change password`);
+            res.writeHead(302, { 'Location': '/change-password.html?forced=true' });
+            res.end();
+            return;
+        }
+
+        // Get user from session
+        const userId = sessions.get(sessionId);
+        console.log(`📄 store-employee.html - User ID from session: ${userId}`);
+
+        // Check if this is a store employee
+        if (userId.startsWith('personal_')) {
+            const personalId = userId.replace('personal_', '');
+
+            database.database.get(
+                'SELECT employee_id FROM employees WHERE employee_id = ?',
+                [personalId],
+                (err, employee) => {
+                    if (employee) {
+                        // Is a store employee, serve the page
+                        console.log(`✅ store-employee.html - User is a store employee, serving page`);
+                        serveStaticFile(res, 'store-employee.html', 'text/html');
+                    } else {
+                        // Check if they're a store owner (they can also access employee page)
+                        database.database.get(
+                            'SELECT boss_id FROM boss WHERE boss_id = ?',
+                            [personalId],
+                            (err, boss) => {
+                                if (boss) {
+                                    console.log(`✅ store-employee.html - User is a store owner (can access), serving page`);
+                                    serveStaticFile(res, 'store-employee.html', 'text/html');
+                                } else {
+                                    // Not authorized
+                                    console.log(`❌ store-employee.html - User is not authorized, redirecting`);
+                                    res.writeHead(302, { 'Location': '/dashboard.html' });
+                                    res.end();
+                                }
+                            }
+                        );
+                    }
+                }
+            );
+        } else if (userId === '000000') {
+            // Admin trying to access employee page
+            console.log(`❌ store-employee.html - Admin trying to access, redirecting to admin`);
+            res.writeHead(302, { 'Location': '/admin.html' });
+            res.end();
+        } else if (userId.startsWith('client_')) {
+            // Client trying to access employee page
+            console.log(`❌ store-employee.html - Client trying to access, redirecting to client`);
+            res.writeHead(302, { 'Location': '/client-dashboard.html' });
+            res.end();
+        } else {
+            res.writeHead(302, { 'Location': '/dashboard.html' });
+            res.end();
+        }
     } else if (pathname === '/client-dashboard.html') {
-        serveStaticFile(res, 'client-dashboard.html', 'text/html');
+        // Check if user is authenticated
+        const cookies = parseCookies(req);
+        const sessionId = cookies.sessionId;
+
+        console.log(`📄 Accessing client-dashboard.html - Session ID: ${sessionId || 'none'}`);
+
+        if (!sessionId || (!sessions.has(sessionId) && !tempAdminSessions.has(sessionId))) {
+            console.log(`❌ client-dashboard.html - No valid session, redirecting to login`);
+            res.writeHead(302, { 'Location': '/login.html' });
+            res.end();
+            return;
+        }
+
+        if (tempAdminSessions.has(sessionId)) {
+            console.log(`⚠️ client-dashboard.html - Temporary session, redirecting to change password`);
+            res.writeHead(302, { 'Location': '/change-password.html?forced=true' });
+            res.end();
+            return;
+        }
+
+        // Get user from session
+        const userId = sessions.get(sessionId);
+        console.log(`📄 client-dashboard.html - User ID from session: ${userId}`);
+
+        // Check if this is a client
+        if (userId.startsWith('client_')) {
+            // Is a client, serve the page
+            console.log(`✅ client-dashboard.html - User is a client, serving page`);
+            serveStaticFile(res, 'client-dashboard.html', 'text/html');
+        } else if (userId === '000000') {
+            // Admin trying to access client page
+            console.log(`❌ client-dashboard.html - Admin trying to access, redirecting to admin`);
+            res.writeHead(302, { 'Location': '/admin.html' });
+            res.end();
+        } else if (userId.startsWith('personal_')) {
+            // Personal user trying to access client page
+            console.log(`❌ client-dashboard.html - Personal user trying to access, redirecting to store`);
+            res.writeHead(302, { 'Location': '/store-owner.html' });
+            res.end();
+        } else {
+            res.writeHead(302, { 'Location': '/dashboard.html' });
+            res.end();
+        }
     } else if (pathname === '/products.html') {
         serveStaticFile(res, 'products.html', 'text/html');
     } else if (pathname === '/product-detail.html') {
@@ -2110,7 +2321,7 @@ const server = http.createServer((req, res) => {
 
                         res.writeHead(200, {
                             'Content-Type': 'application/json',
-                            'Set-Cookie': `sessionId=${sessionId}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict`
+                            'Set-Cookie': `sessionId=${sessionId}; HttpOnly; Path=/; Max-Age=86400; SameSite=Strict`
                         });
 
                         res.end(JSON.stringify({
@@ -2504,6 +2715,7 @@ const server = http.createServer((req, res) => {
         });
     }
 
+    // ===== FIXED: /api/verify-2fa endpoint with proper redirect handling =====
     else if (pathname === '/api/verify-2fa' && req.method === 'POST') {
         let body = '';
         req.on('data', chunk => {
@@ -2543,8 +2755,10 @@ const server = http.createServer((req, res) => {
 
                 verificationCodes.delete(email);
 
-                // Determine redirect based on user type
+                // Determine redirect based on user type - all go to change-password.html with appropriate query parameters
                 let redirectTo = 'change-password.html?forced=true';
+
+                // Add redirect parameter to know where to go after password change
                 if (verificationData.userType === 'store_owner') {
                     redirectTo = 'change-password.html?forced=true&redirect=store-owner.html';
                 } else if (verificationData.userType === 'store_employee') {
@@ -2553,7 +2767,13 @@ const server = http.createServer((req, res) => {
                     redirectTo = 'change-password.html?forced=true&redirect=admin.html';
                 } else if (verificationData.userType === 'client') {
                     redirectTo = 'change-password.html?forced=true&redirect=client-dashboard.html';
+                } else {
+                    redirectTo = 'change-password.html?forced=true&redirect=dashboard.html';
                 }
+
+                console.log(`🔄 Password change required for ${verificationData.userType}. Redirecting to: ${redirectTo}`);
+                console.log(`🔄 Temp session created: ${tempSessionId} for user: ${verificationData.userId}`);
+                console.log(`🔐 TempAdminSessions now has ${tempAdminSessions.size} entries`);
 
                 res.writeHead(200, {
                     'Content-Type': 'application/json',
@@ -2608,11 +2828,12 @@ const server = http.createServer((req, res) => {
                     redirectTo = 'dashboard.html';
             }
 
-            console.log(`✅ ${verificationData.userType} login successful. Redirecting to: ${redirectTo}`);
+            console.log(`✅ ${verificationData.userType} login successful. Session: ${sessionId}, User: ${sessions.get(sessionId)}, Redirecting to: ${redirectTo}`);
+            console.log(`📊 Current sessions: ${Array.from(sessions.entries()).map(([id, user]) => `${id.substring(0,8)}...:${user}`).join(', ')}`);
 
             res.writeHead(200, {
                 'Content-Type': 'application/json',
-                'Set-Cookie': `sessionId=${sessionId}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict`
+                'Set-Cookie': `sessionId=${sessionId}; HttpOnly; Path=/; Max-Age=86400; SameSite=Strict`
             });
 
             res.end(JSON.stringify({
@@ -2629,7 +2850,7 @@ const server = http.createServer((req, res) => {
         const sessionId = cookies.sessionId;
 
         if (sessionId) {
-            const userId = sessions.get(sessionId);
+            const userId = sessions.get(sessionId) || tempAdminSessions.get(sessionId);
             if (userId) {
                 database.logAudit(userId, 'LOGOUT', 'auth', userId.toString(), 'User logged out', ipAddress);
             }
@@ -2650,6 +2871,7 @@ const server = http.createServer((req, res) => {
             const cookies = parseCookies(req);
             const sessionId = cookies.sessionId;
 
+            // Check if this is a temp session
             if (tempAdminSessions.has(sessionId)) {
                 // This is a temporary session (password change required)
                 // Get user info to determine type
@@ -3549,15 +3771,16 @@ const server = http.createServer((req, res) => {
                                     }
                                 }
 
-                                console.log(`Password changed successfully for user ${userId}, redirecting to ${finalRedirect}`);
+                                console.log(`✅ Password changed successfully for user ${userId}, redirecting to ${finalRedirect}`);
+                                console.log(`New session created: ${newSessionId} -> ${sessionUserId}`);
 
                                 database.logAudit(userId, 'FORCED_PASSWORD_CHANGE', 'auth', userId.toString(),
                                     `${user.user_type || 'user'} forced password change completed`, ipAddress);
 
-                                // Set the cookie with proper options
+                                // Set the cookie with proper options - extended to 24 hours
                                 res.writeHead(200, {
                                     'Content-Type': 'application/json',
-                                    'Set-Cookie': `sessionId=${newSessionId}; HttpOnly; Path=/; Max-Age=86400; SameSite=Strict` // Extended to 24 hours
+                                    'Set-Cookie': `sessionId=${newSessionId}; HttpOnly; Path=/; Max-Age=86400; SameSite=Strict`
                                 });
 
                                 res.end(JSON.stringify({
@@ -3625,7 +3848,8 @@ const server = http.createServer((req, res) => {
                                                 const newSessionId = generateSessionId();
                                                 sessions.set(newSessionId, `personal_${userId}`);
 
-                                                console.log(`Password changed successfully for ${userType} ${userId}, redirecting to ${finalRedirect}`);
+                                                console.log(`✅ Password changed successfully for ${userType} ${userId}, redirecting to ${finalRedirect}`);
+                                                console.log(`New session created: ${newSessionId} -> personal_${userId}`);
 
                                                 database.logAudit(userId, 'FORCED_PASSWORD_CHANGE', 'auth', userId.toString(),
                                                     `${userType} forced password change completed`, ipAddress);

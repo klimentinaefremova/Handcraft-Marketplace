@@ -11,4 +11,3 @@
 
 Klimentina Efremova
 
-Aida Balikj
