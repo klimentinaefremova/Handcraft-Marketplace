@@ -1,0 +1,21 @@
+CREATE OR REPLACE FUNCTION get_clients_without_orders()
+RETURNS TABLE (
+    client_id INT,
+    client_name TEXT,
+    email TEXT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        c.client_id,
+        c.name AS client_name,
+        c.email
+    FROM client c
+    LEFT JOIN makes_order mo
+        ON c.client_id = mo.client_id
+    WHERE mo.order_num IS NULL
+    ORDER BY c.client_id;
+END;
+$$;

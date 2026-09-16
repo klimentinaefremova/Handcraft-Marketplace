@@ -1,0 +1,20 @@
+CREATE OR REPLACE FUNCTION get_approximate_orders_per_client()
+RETURNS TABLE (
+    total_clients BIGINT,
+    total_orders BIGINT,
+    approximate_orders_per_client NUMERIC
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        (SELECT COUNT(*) FROM client) AS total_clients,
+        (SELECT COUNT(*) FROM "order") AS total_orders,
+        ROUND(
+            (SELECT COUNT(*) FROM "order")::NUMERIC
+            / NULLIF((SELECT COUNT(*) FROM client), 0),
+            2
+        ) AS approximate_orders_per_client;
+END;
+$$;

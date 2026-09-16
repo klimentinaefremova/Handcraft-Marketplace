@@ -1,0 +1,62 @@
+CREATE OR REPLACE FUNCTION get_products_by_total_sales()
+RETURNS TABLE (
+    product_code INT,
+    product_description TEXT,
+    product_price NUMERIC,
+    number_of_orders BIGINT,
+    total_revenue NUMERIC
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        p.code AS product_code,
+        p.description AS product_description,
+        p.price AS product_price,
+        COUNT(DISTINCT o.order_num) AS number_of_orders,
+        COALESCE(
+            SUM(
+                p.price
+                * o.quantity
+                * (1 - COALESCE(o.discount, 0) / 100.0)
+            ),
+            0
+        ) AS total_revenue
+    FROM product p
+    LEFT JOIN includes i
+        ON p.code = i.code
+    LEFT JOIN "order" o
+        ON i.order_num = o.order_num
+    GROUP BY
+        p.code,
+        p.description,
+        p.price
+    ORDER BY
+        number_of_orders DESC,
+        total_revenue DESC;
+END;
+$$;
+CREATE OR REPLACE FUNCTION get_products_never_ordered()
+RETURNS TABLE (
+    product_code INT,
+    product_description TEXT,
+    product_price NUMERIC,
+    current_stock INT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        p.code AS product_code,
+        p.description AS product_description,
+        p.price AS product_price,
+        p.availability AS current_stock
+    FROM product p
+    LEFT JOIN includes i
+        ON p.code = i.code
+    WHERE i.order_num IS NULL
+    ORDER BY p.code;
+END;
+$$;

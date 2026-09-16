@@ -1,0 +1,47 @@
+CREATE OR REPLACE FUNCTION update_product_availability()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- When a product is newly added to an order,
+    -- decrease the available quantity.
+    IF TG_OP = 'INSERT' THEN
+
+        UPDATE sells
+        SET quantity = quantity - (
+            SELECT o.quantity
+            FROM "order" o
+            WHERE o.order_num = NEW.order_num
+        )
+        WHERE code = NEW.code;
+
+    -- If the product/order entry is modified,
+    -- restore the old quantity and subtract the new quantity.
+    ELSIF TG_OP = 'UPDATE' THEN
+
+        UPDATE sells
+        SET quantity = quantity
+            + (
+                SELECT o.quantity
+                FROM "order" o
+                WHERE o.order_num = OLD.order_num
+            )
+            - (
+                SELECT o.quantity
+                FROM "order" o
+                WHERE o.order_num = NEW.order_num
+            )
+        WHERE code = NEW.code;
+
+    END IF;
+
+    RETURN NULL;
+END;
+$$;
+
+
+CREATE TRIGGER trg_update_product_availability
+AFTER INSERT OR UPDATE
+ON includes
+FOR EACH ROW
+EXECUTE FUNCTION update_product_availability();

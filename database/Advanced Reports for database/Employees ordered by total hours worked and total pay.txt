@@ -1,0 +1,29 @@
+CREATE OR REPLACE FUNCTION get_employees_by_hours_and_pay()
+RETURNS TABLE (
+    id BIGINT,
+    employee_name TEXT,
+    total_hours_worked NUMERIC,
+    total_pay NUMERIC
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        e.id,
+        p.name AS employee_name,
+        COALESCE(SUM(w.working_hours), 0) AS total_hours_worked,
+        COALESCE(SUM(w.wage), 0) AS total_pay
+    FROM employees e
+    JOIN personal p
+        ON e.id = p.id
+    LEFT JOIN worked w
+        ON e.id = w.id
+    GROUP BY
+        e.id,
+        p.name
+    ORDER BY
+        total_hours_worked DESC,
+        total_pay DESC;
+END;
+$$;

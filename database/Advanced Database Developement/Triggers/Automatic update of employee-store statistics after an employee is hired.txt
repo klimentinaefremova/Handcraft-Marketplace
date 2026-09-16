@@ -1,0 +1,30 @@
+CREATE OR REPLACE FUNCTION initialize_employee_statistics()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    /*
+    * The employee is created first.
+    * Work statistics can be initialized when
+    * the employee is assigned to a store.
+    * The actual store assignment should be handled
+    * through works_in_store. */
+    INSERT INTO worked (
+        employee_id,
+        total_working_hours,
+        total_wage
+    )
+    VALUES (
+        NEW.id,
+        0,
+        0
+    );
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_initialize_employee_statistics
+AFTER INSERT
+ON employees
+FOR EACH ROW
+EXECUTE FUNCTION initialize_employee_statistics();

@@ -1,0 +1,19 @@
+CREATE OR REPLACE VIEW vw_product_store_overview AS
+SELECT
+    p.code AS product_code,
+    p.description,
+    p.price,
+    p.availability,
+    p.weight,
+    p.approx_production_time,
+    s.store_id,
+    s.name AS store_name,
+    s.physical_address,
+    s.rating,
+    sl.quantity,
+    sl.discount
+FROM product p
+JOIN sells sl
+    ON sl.code = p.code
+JOIN store s
+   ON s.store_id = sl.store_id;

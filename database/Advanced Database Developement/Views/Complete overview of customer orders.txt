@@ -1,0 +1,23 @@
+CREATE OR REPLACE VIEW vw_customer_order_overview AS
+SELECT
+    o.order_num,
+    o.quantity,
+    o.status,
+    o.last_modified_date,
+    o.payment_method,
+    o.discount,
+    c.client_id,
+    c.first_name,
+    c.last_name,
+    c.email,
+    p.code AS product_code,
+    p.description AS product_description,
+    p.price FROM "order" o
+JOIN makes_order mo
+    ON mo.order_num = o.order_num
+JOIN client c
+    ON c.client_id = mo.client_id
+JOIN includes i
+    ON i.order_num = o.order_num
+JOIN product p
+    ON p.code = i.code;

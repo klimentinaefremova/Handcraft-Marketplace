@@ -1,0 +1,19 @@
+CREATE OR REPLACE VIEW vw_store_inventory AS
+SELECT
+    s.store_id,
+    s.name AS store_name,
+
+    p.code AS product_code,
+    p.description,
+    p.price,
+    p.availability,
+    p.approx_production_time,
+
+    sl.quantity,
+    sl.discount
+
+FROM store s
+JOIN sells sl
+    ON sl.store_id = s.store_id
+JOIN product p
+    ON p.code = sl.code;

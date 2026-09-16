@@ -1,0 +1,45 @@
+CREATE OR REPLACE FUNCTION get_orders_by_total()
+RETURNS TABLE (
+    order_num INT,
+    client_id INT,
+    client_name TEXT,
+    order_quantity INT,
+    order_status TEXT,
+    payment_method TEXT,
+    discount NUMERIC,
+    order_total NUMERIC
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        o.order_num,
+        c.client_id,
+        c.name,
+        o.quantity,
+        o.status,
+        o.payment_method,
+        COALESCE(o.discount, 0) AS discount,
+        SUM(p.price * o.quantity)
+            * (1 - COALESCE(o.discount, 0) / 100) AS order_total
+    FROM "order" o
+    JOIN makes_order mo
+        ON o.order_num = mo.order_num
+    JOIN client c
+        ON mo.client_id = c.client_id
+    JOIN includes i
+        ON o.order_num = i.order_num
+    JOIN product p
+        ON i.code = p.code
+    GROUP BY
+        o.order_num,
+        c.client_id,
+        c.name,
+        o.quantity,
+        o.status,
+        o.payment_method,
+        o.discount
+    ORDER BY order_total DESC;
+END;
+$$;

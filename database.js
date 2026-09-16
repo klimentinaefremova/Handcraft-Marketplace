@@ -1,157 +1,273 @@
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
+require('dotenv').config();
 
-const dbPath = path.join(__dirname, 'database', 'handcraft.db');
-const dbDir = path.dirname(dbPath);
+/*
+ * ============================================================
+ * PostgreSQL CONNECTION
+ * ============================================================
+ *
+ * Put your actual FINKI connection information in .env
+ *
+ * Example:
+ *
+ * PGHOST=localhost
+ * PGPORT=5432
+ * PGDATABASE=handcraft
+ * PGUSER=your_username
+ * PGPASSWORD=your_password
+ *
+ * If you use the SSH tunnel, PGHOST/PGPORT will normally
+ * point to the LOCAL end of the SSH tunnel.
+ */
 
-// Create database directory if it doesn't exist
-const fs = require('fs');
-if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
-}
-
-const database = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.error('Error opening database:', err.message);
-    } else {
-        console.log('✅ Connected to SQLite database');
-    }
+const pool = new Pool({
+    host: process.env.PGHOST || 'localhost',
+    port: parseInt(process.env.PGPORT || '5432', 10),
+    database: process.env.PGDATABASE || 'handcraft',
+    user: process.env.PGUSER || 'postgres',
+    password: process.env.PGPASSWORD || '',
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000
 });
 
-// Enable foreign keys
-database.run('PRAGMA foreign_keys = ON');
+pool.on('connect', () => {
+    console.log('✅ Connected to PostgreSQL database');
+});
 
-// Helper function to ensure general category exists with ID 1
-function ensureGeneralCategory(callback) {
-    // First check if category with ID 1 exists and is named 'General'
-    database.get('SELECT category_id, name FROM category WHERE category_id = 1', [], (err, row) => {
-        if (err) {
-            callback(err);
-        } else if (row && row.name === 'General') {
-            // Category with ID 1 already exists and is General
-            console.log('✅ General category exists with ID: 1');
-            callback(null);
-        } else if (row && row.name !== 'General') {
-            // Category with ID 1 exists but has different name - update it
-            database.run(
-                'UPDATE category SET name = ?, description = ? WHERE category_id = 1',
-                ['General', 'General products category'],
-                function(err) {
-                    if (err) {
-                        callback(err);
-                    } else {
-                        console.log('✅ Updated category ID 1 to General');
-                        callback(null);
-                    }
-                }
-            );
-        } else {
-            // No category with ID 1 exists, create it
-            // First, check if we need to reset the autoincrement sequence
-            database.run(
-                'INSERT INTO category (category_id, name, description) VALUES (1, ?, ?)',
-                ['General', 'General products category'],
-                function(err) {
-                    if (err) {
-                        // If insert fails, try without specifying ID (let SQLite assign it)
-                        database.run(
-                            'INSERT INTO category (name, description) VALUES (?, ?)',
-                            ['General', 'General products category'],
-                            function(err) {
-                                if (err) {
-                                    callback(err);
-                                } else {
-                                    console.log('✅ Created General category with auto-assigned ID');
-                                    callback(null);
-                                }
-                            }
-                        );
-                    } else {
-                        console.log('✅ Created General category with ID: 1');
-                        callback(null);
-                    }
-                }
-            );
-        }
-    });
+pool.on('error', (err) => {
+    console.error('❌ Unexpected PostgreSQL pool error:', err);
+});
+
+/*
+ * ============================================================
+ * HELPER
+ * ============================================================
+ */
+
+function query(text, params = [], callback) {
+    pool.query(text, params)
+        .then(result => {
+            callback(null, result);
+        })
+        .catch(err => {
+            callback(err, null);
+        });
 }
 
-// Helper function to get the General category ID
+
+/*
+ * ============================================================
+ * GENERAL CATEGORY
+ * ============================================================
+ */
+
+function ensureGeneralCategory(callback) {
+
+    query(
+        `SELECT category_id, name
+         FROM category
+         WHERE category_id = 1`,
+        [],
+        (err, result) => {
+
+            if (err) {
+                callback(err);
+                return;
+            }
+
+            const row = result.rows[0];
+
+            if (row && row.name === 'General') {
+
+                console.log('✅ General category exists with ID: 1');
+                callback(null);
+
+            } else if (row && row.name !== 'General') {
+
+                query(
+                    `UPDATE category
+                     SET name = $1,
+                         description = $2
+                     WHERE category_id = 1`,
+                    ['General', 'General products category'],
+                    (err) => {
+
+                        if (err) {
+                            callback(err);
+                        } else {
+                            console.log('✅ Updated category ID 1 to General');
+                            callback(null);
+                        }
+                    }
+                );
+
+            } else {
+
+                query(
+                    `INSERT INTO category
+                        (category_id, name, description)
+                     VALUES
+                        (1, $1, $2)
+                     ON CONFLICT (category_id) DO NOTHING`,
+                    ['General', 'General products category'],
+                    (err) => {
+
+                        if (err) {
+                            callback(err);
+                        } else {
+                            console.log('✅ Created General category with ID: 1');
+                            callback(null);
+                        }
+                    }
+                );
+            }
+        }
+    );
+}
+
+
 function getGeneralCategoryId(callback) {
-    // First try to get category with ID 1 that is named 'General'
-    database.get('SELECT category_id FROM category WHERE category_id = 1 AND name = ?', ['General'], (err, row) => {
-        if (err) {
-            callback(err, null);
-        } else if (row) {
-            callback(null, row.category_id);
-        } else {
-            // If not found with ID 1, try to find by name
-            database.get('SELECT category_id FROM category WHERE name = ?', ['General'], (err, row) => {
-                if (err) {
-                    callback(err, null);
-                } else if (row) {
-                    callback(null, row.category_id);
-                } else {
-                    // Create General category if it doesn't exist
-                    database.run(
-                        'INSERT INTO category (name, description) VALUES (?, ?)',
+
+    query(
+        `SELECT category_id
+         FROM category
+         WHERE category_id = 1
+           AND name = $1`,
+        ['General'],
+        (err, result) => {
+
+            if (err) {
+                callback(err, null);
+                return;
+            }
+
+            if (result.rows.length > 0) {
+                callback(null, result.rows[0].category_id);
+                return;
+            }
+
+            query(
+                `SELECT category_id
+                 FROM category
+                 WHERE name = $1`,
+                ['General'],
+                (err, result) => {
+
+                    if (err) {
+                        callback(err, null);
+                        return;
+                    }
+
+                    if (result.rows.length > 0) {
+                        callback(null, result.rows[0].category_id);
+                        return;
+                    }
+
+                    query(
+                        `INSERT INTO category
+                            (name, description)
+                         VALUES
+                            ($1, $2)
+                         RETURNING category_id`,
                         ['General', 'General products category'],
-                        function(err) {
+                        (err, result) => {
+
                             if (err) {
                                 callback(err, null);
                             } else {
-                                const newId = this.lastID;
-                                console.log(`✅ Created new General category with ID: ${newId}`);
+                                const newId = result.rows[0].category_id;
+
+                                console.log(
+                                    `✅ Created new General category with ID: ${newId}`
+                                );
+
                                 callback(null, newId);
                             }
                         }
                     );
                 }
-            });
+            );
         }
-    });
+    );
 }
 
-// User functions
+
+/*
+ * ============================================================
+ * USER FUNCTIONS
+ * ============================================================
+ */
+
 function getUserByUsername(username, callback) {
-    database.get('SELECT * FROM users WHERE username = ?', [username], (err, row) => {
-        callback(err, row);
-    });
+
+    query(
+        `SELECT *
+         FROM users
+         WHERE username = $1`,
+        [username],
+        (err, result) => {
+
+            callback(
+                err,
+                result ? result.rows[0] : null
+            );
+        }
+    );
 }
+
 
 function getUserById(id, callback) {
-    database.get('SELECT * FROM users WHERE id = ?', [id], (err, row) => {
-        if (err || !row) {
-            callback(err, null);
-            return;
-        }
 
-        // Get user roles
-        database.all(
-            `SELECT r.* FROM roles r
-       JOIN user_roles ur ON r.role_id = ur.role_id
-       WHERE ur.user_id = ?`,
-            [id],
-            (err, roles) => {
-                if (err) {
-                    callback(err, null);
-                } else {
-                    row.roles = roles || [];
-                    callback(null, row);
-                }
+    query(
+        `SELECT *
+         FROM users
+         WHERE id = $1`,
+        [id],
+        (err, result) => {
+
+            if (err || !result || result.rows.length === 0) {
+                callback(err, null);
+                return;
             }
-        );
-    });
+
+            const row = result.rows[0];
+
+            query(
+                `SELECT r.*
+                 FROM roles r
+                 JOIN user_roles ur
+                   ON r.role_id = ur.role_id
+                 WHERE ur.user_id = $1`,
+                [id],
+                (err, result) => {
+
+                    if (err) {
+                        callback(err, null);
+                    } else {
+                        row.roles = result.rows || [];
+                        callback(null, row);
+                    }
+                }
+            );
+        }
+    );
 }
 
+
 function createUser(id, username, email, password, userType, callback) {
+
     const hashedPassword = bcrypt.hashSync(password, 10);
-    database.run(
-        'INSERT INTO users (id, username, email, password, user_type) VALUES (?, ?, ?, ?, ?)',
+
+    query(
+        `INSERT INTO users
+            (id, username, email, password, user_type)
+         VALUES
+            ($1, $2, $3, $4, $5)`,
         [id, username, email, hashedPassword, userType],
-        function(err) {
+        (err) => {
+
             if (err) {
                 callback(err, null);
             } else {
@@ -161,214 +277,422 @@ function createUser(id, username, email, password, userType, callback) {
     );
 }
 
-// Client functions
+
+/*
+ * ============================================================
+ * CLIENT FUNCTIONS
+ * ============================================================
+ */
+
 function getClientByEmail(email, callback) {
-    database.get('SELECT * FROM client WHERE email = ?', [email], (err, row) => {
-        callback(err, row);
-    });
+
+    query(
+        `SELECT *
+         FROM client
+         WHERE email = $1`,
+        [email],
+        (err, result) => {
+
+            callback(
+                err,
+                result ? result.rows[0] : null
+            );
+        }
+    );
 }
+
 
 function getClientById(id, callback) {
-    database.get('SELECT * FROM client WHERE client_id = ?', [id], (err, row) => {
-        callback(err, row);
-    });
+
+    query(
+        `SELECT *
+         FROM client
+         WHERE client_id = $1`,
+        [id],
+        (err, result) => {
+
+            callback(
+                err,
+                result ? result.rows[0] : null
+            );
+        }
+    );
 }
 
+
 function createClient(clientData, callback) {
-    const hashedPassword = bcrypt.hashSync(clientData.password, 10);
-    database.run(
-        'INSERT INTO client (first_name, last_name, email, password) VALUES (?, ?, ?, ?)',
-        [clientData.first_name, clientData.last_name, clientData.email, hashedPassword],
-        function(err) {
+
+    const hashedPassword =
+        bcrypt.hashSync(clientData.password, 10);
+
+    query(
+        `INSERT INTO client
+            (first_name, last_name, email, password)
+         VALUES
+            ($1, $2, $3, $4)
+         RETURNING client_id`,
+        [
+            clientData.first_name,
+            clientData.last_name,
+            clientData.email,
+            hashedPassword
+        ],
+        (err, result) => {
+
             if (err) {
                 callback(err, null);
             } else {
-                callback(null, this.lastID);
+                callback(
+                    null,
+                    result.rows[0].client_id
+                );
             }
         }
     );
 }
 
-function verifyClientPassword(password, hashedPassword, callback) {
+
+function verifyClientPassword(
+    password,
+    hashedPassword,
+    callback
+) {
+
     try {
-        const isValid = bcrypt.compareSync(password, hashedPassword);
+
+        const isValid =
+            bcrypt.compareSync(password, hashedPassword);
+
         callback(null, isValid);
+
     } catch (err) {
+
         callback(err, false);
     }
 }
 
-// Personal functions
+
+/*
+ * ============================================================
+ * PERSONAL / EMPLOYEE FUNCTIONS
+ * ============================================================
+ */
+
 function getPersonalByEmail(email, callback) {
-    database.get('SELECT * FROM personal WHERE email = ?', [email], (err, row) => {
-        callback(err, row);
-    });
+
+    query(
+        `SELECT *
+         FROM personal
+         WHERE email = $1`,
+        [email],
+        (err, result) => {
+
+            callback(
+                err,
+                result ? result.rows[0] : null
+            );
+        }
+    );
 }
+
 
 function getPersonalById(id, callback) {
-    database.get('SELECT * FROM personal WHERE id = ?', [id], (err, row) => {
-        callback(err, row);
-    });
+
+    query(
+        `SELECT *
+         FROM personal
+         WHERE id = $1`,
+        [id],
+        (err, result) => {
+
+            callback(
+                err,
+                result ? result.rows[0] : null
+            );
+        }
+    );
 }
 
-// Password verification for regular users
+
 function verifyPassword(password, hashedPassword) {
     return bcrypt.compareSync(password, hashedPassword);
 }
 
-// Password update
-function updatePasswordAndClearForce(userId, newPassword, callback) {
-    const hashedPassword = bcrypt.hashSync(newPassword, 10);
-    database.run(
-        'UPDATE users SET password = ?, force_password_change = 0 WHERE id = ?',
+
+function updatePasswordAndClearForce(
+    userId,
+    newPassword,
+    callback
+) {
+
+    const hashedPassword =
+        bcrypt.hashSync(newPassword, 10);
+
+    query(
+        `UPDATE users
+         SET password = $1,
+             force_password_change = 0
+         WHERE id = $2`,
         [hashedPassword, userId],
-        function(err) {
+        (err) => {
+
             callback(err);
         }
     );
 }
 
-// Product functions
+
+/*
+ * ============================================================
+ * PRODUCT FUNCTIONS
+ * ============================================================
+ */
+
 function getProducts(categoryId, searchTerm, callback) {
-    let query = `
-    SELECT p.*, c.name as category_name, s.name as store_name
-    FROM product p
-    JOIN category c ON p.category_id = c.category_id
-    JOIN store s ON p.store_id = s.store_id
-    WHERE 1=1
-  `;
+
+    let queryText = `
+        SELECT
+            p.*,
+            c.name AS category_name,
+            s.name AS store_name
+        FROM product p
+        JOIN category c
+          ON p.category_id = c.category_id
+        JOIN store s
+          ON p.store_id = s.store_id
+        WHERE 1 = 1
+    `;
+
     const params = [];
+    let paramIndex = 1;
 
     if (categoryId && categoryId !== 'all') {
-        query += ' AND p.category_id = ?';
+
+        queryText +=
+            ` AND p.category_id = $${paramIndex}`;
+
         params.push(categoryId);
+        paramIndex++;
     }
 
     if (searchTerm) {
-        query += ' AND (p.description LIKE ? OR p.code LIKE ?)';
-        params.push(`%${searchTerm}%`, `%${searchTerm}%`);
+
+        queryText +=
+            ` AND (
+                p.description ILIKE $${paramIndex}
+                OR p.code ILIKE $${paramIndex + 1}
+            )`;
+
+        params.push(`%${searchTerm}%`);
+        params.push(`%${searchTerm}%`);
+
+        paramIndex += 2;
     }
 
-    database.all(query, params, (err, rows) => {
-        if (err) {
-            callback(err, null);
-        } else {
-            callback(null, rows || []);
+    queryText += ` ORDER BY p.code`;
+
+    query(
+        queryText,
+        params,
+        (err, result) => {
+
+            if (err) {
+                callback(err, null);
+            } else {
+                callback(null, result.rows || []);
+            }
         }
-    });
+    );
 }
+
 
 function getProductById(id, callback) {
-    database.get(
-        `SELECT p.*, c.name as category_name, s.name as store_name
-     FROM product p
-     JOIN category c ON p.category_id = c.category_id
-     JOIN store s ON p.store_id = s.store_id
-     WHERE p.id = ?`,
+
+    query(
+        `SELECT
+            p.*,
+            c.name AS category_name,
+            s.name AS store_name
+         FROM product p
+         JOIN category c
+           ON p.category_id = c.category_id
+         JOIN store s
+           ON p.store_id = s.store_id
+         WHERE p.id = $1`,
         [id],
-        (err, row) => {
-            if (err || !row) {
+        (err, result) => {
+
+            if (err || result.rows.length === 0) {
                 callback(err, null);
-            } else {
-                // Get images for product
-                database.all(
-                    'SELECT * FROM image WHERE product_code = ?',
-                    [row.code],
-                    (err, images) => {
-                        if (err) {
-                            callback(err, null);
-                        } else {
-                            row.images = images || [];
-                            // Get colors for product
-                            database.all(
-                                'SELECT * FROM color WHERE product_code = ?',
-                                [row.code],
-                                (err, colors) => {
-                                    if (err) {
-                                        callback(err, null);
-                                    } else {
-                                        row.colors = colors || [];
-                                        callback(null, row);
-                                    }
-                                }
-                            );
-                        }
-                    }
-                );
+                return;
             }
+
+            const row = result.rows[0];
+
+            query(
+                `SELECT *
+                 FROM image
+                 WHERE product_code = $1`,
+                [row.code],
+                (err, result) => {
+
+                    if (err) {
+                        callback(err, null);
+                        return;
+                    }
+
+                    row.images = result.rows || [];
+
+                    query(
+                        `SELECT *
+                         FROM color
+                         WHERE product_code = $1`,
+                        [row.code],
+                        (err, result) => {
+
+                            if (err) {
+                                callback(err, null);
+                            } else {
+                                row.colors =
+                                    result.rows || [];
+
+                                callback(null, row);
+                            }
+                        }
+                    );
+                }
+            );
         }
     );
 }
+
 
 function getProductByCode(code, callback) {
-    database.get(
-        `SELECT p.*, c.name as category_name, s.name as store_name
-     FROM product p
-     JOIN category c ON p.category_id = c.category_id
-     JOIN store s ON p.store_id = s.store_id
-     WHERE p.code = ?`,
+
+    query(
+        `SELECT
+            p.*,
+            c.name AS category_name,
+            s.name AS store_name
+         FROM product p
+         JOIN category c
+           ON p.category_id = c.category_id
+         JOIN store s
+           ON p.store_id = s.store_id
+         WHERE p.code = $1`,
         [code],
-        (err, row) => {
-            if (err || !row) {
+        (err, result) => {
+
+            if (err || result.rows.length === 0) {
                 callback(err, null);
-            } else {
-                // Get images for product
-                database.all(
-                    'SELECT * FROM image WHERE product_code = ?',
-                    [code],
-                    (err, images) => {
-                        if (err) {
-                            callback(err, null);
-                        } else {
-                            row.images = images || [];
-                            // Get colors for product
-                            database.all(
-                                'SELECT * FROM color WHERE product_code = ?',
-                                [code],
-                                (err, colors) => {
-                                    if (err) {
-                                        callback(err, null);
-                                    } else {
-                                        row.colors = colors || [];
-                                        callback(null, row);
-                                    }
-                                }
-                            );
-                        }
-                    }
-                );
+                return;
             }
+
+            const row = result.rows[0];
+
+            query(
+                `SELECT *
+                 FROM image
+                 WHERE product_code = $1`,
+                [code],
+                (err, result) => {
+
+                    if (err) {
+                        callback(err, null);
+                        return;
+                    }
+
+                    row.images = result.rows || [];
+
+                    query(
+                        `SELECT *
+                         FROM color
+                         WHERE product_code = $1`,
+                        [code],
+                        (err, result) => {
+
+                            if (err) {
+                                callback(err, null);
+                            } else {
+
+                                row.colors =
+                                    result.rows || [];
+
+                                callback(null, row);
+                            }
+                        }
+                    );
+                }
+            );
         }
     );
 }
 
+
 function addProduct(personalId, productData, callback) {
+
     getGeneralCategoryId((err, generalCategoryId) => {
+
         if (err) {
             callback(err, null);
             return;
         }
 
-        const categoryId = productData.category_id || generalCategoryId;
+        const categoryId =
+            productData.category_id || generalCategoryId;
 
-        // FIXED: Added validation for required fields
         if (!productData.code) {
-            callback(new Error('Product code is required'), null);
+            callback(
+                new Error('Product code is required'),
+                null
+            );
             return;
         }
 
         if (!productData.store_id) {
-            callback(new Error('Store ID is required'), null);
+            callback(
+                new Error('Store ID is required'),
+                null
+            );
             return;
         }
 
-        database.run(
-            `INSERT INTO product (
-        id, code, description, price, availability, weight, dimensions,
-        production_time, category_id, store_id, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+        const productId =
+            'PROD_' +
+            Date.now().toString().slice(-8);
+
+        query(
+            `INSERT INTO product
+                (
+                    id,
+                    code,
+                    description,
+                    price,
+                    availability,
+                    weight,
+                    dimensions,
+                    production_time,
+                    category_id,
+                    store_id,
+                    created_at
+                )
+             VALUES
+                (
+                    $1,
+                    $2,
+                    $3,
+                    $4,
+                    $5,
+                    $6,
+                    $7,
+                    $8,
+                    $9,
+                    $10,
+                    NOW()
+                )
+             RETURNING id`,
             [
-                'PROD_' + Date.now().toString().slice(-8), // Generate a unique ID
+                productId,
                 productData.code,
                 productData.description || 'No description',
                 productData.price || 0,
@@ -379,111 +703,186 @@ function addProduct(personalId, productData, callback) {
                 categoryId,
                 productData.store_id
             ],
-            function(err) {
+            (err, result) => {
+
                 if (err) {
                     callback(err, null);
-                } else {
-                    const productId = this.lastID;
-
-                    // Log the change
-                    database.run(
-                        `INSERT INTO "change" (date_and_time, product_code, changes)
-             VALUES (datetime('now'), ?, ?)`,
-                        [productData.code, 'Product created'],
-                        function(err) {
-                            if (err) {
-                                console.error('Error logging product creation:', err);
-                            }
-                        }
-                    );
-
-                    // Log who made the change
-                    database.run(
-                        `INSERT INTO makes_change (personal_id, change_date_time, product_code)
-             VALUES (?, datetime('now'), ?)`,
-                        [personalId, productData.code],
-                        function(err) {
-                            if (err) {
-                                console.error('Error logging change maker:', err);
-                            }
-                        }
-                    );
-
-                    // Insert images if provided
-                    if (productData.images && Array.isArray(productData.images) && productData.images.length > 0) {
-                        productData.images.forEach((imageUrl, index) => {
-                            database.run(
-                                `INSERT INTO image (product_code, image_url, is_primary)
-                 VALUES (?, ?, ?)`,
-                                [productData.code, imageUrl, index === 0 ? 1 : 0],
-                                function(err) {
-                                    if (err) {
-                                        console.error('Error inserting image:', err);
-                                    }
-                                }
-                            );
-                        });
-                    }
-
-                    // Insert colors if provided
-                    if (productData.colors && Array.isArray(productData.colors) && productData.colors.length > 0) {
-                        productData.colors.forEach(color => {
-                            database.run(
-                                `INSERT INTO color (product_code, name)
-                                 VALUES (?, ?)`,
-                                [productData.code, color],
-                                function(err) {
-                                    if (err) {
-                                        console.error('Error inserting color:', err);
-                                    }
-                                }
-                            );
-                        });
-                    }
-
-                    callback(null, productId);
+                    return;
                 }
+
+                const returnedId = result.rows[0].id;
+
+                /*
+                 * Log product creation
+                 */
+                query(
+                    `INSERT INTO "change"
+                        (date_and_time, product_code, changes)
+                     VALUES
+                        (NOW(), $1, $2)`,
+                    [
+                        productData.code,
+                        'Product created'
+                    ],
+                    (err) => {
+
+                        if (err) {
+                            console.error(
+                                'Error logging product creation:',
+                                err
+                            );
+                        }
+                    }
+                );
+
+                /*
+                 * Log who made the change
+                 */
+                query(
+                    `INSERT INTO makes_change
+                        (
+                            personal_id,
+                            change_date_time,
+                            product_code
+                        )
+                     VALUES
+                        ($1, NOW(), $2)`,
+                    [
+                        personalId,
+                        productData.code
+                    ],
+                    (err) => {
+
+                        if (err) {
+                            console.error(
+                                'Error logging change maker:',
+                                err
+                            );
+                        }
+                    }
+                );
+
+                /*
+                 * Insert images
+                 */
+                if (
+                    productData.images &&
+                    Array.isArray(productData.images) &&
+                    productData.images.length > 0
+                ) {
+
+                    productData.images.forEach(
+                        (imageUrl, index) => {
+
+                            query(
+                                `INSERT INTO image
+                                    (
+                                        product_code,
+                                        image_url,
+                                        is_primary
+                                    )
+                                 VALUES
+                                    ($1, $2, $3)`,
+                                [
+                                    productData.code,
+                                    imageUrl,
+                                    index === 0
+                                ],
+                                (err) => {
+
+                                    if (err) {
+                                        console.error(
+                                            'Error inserting image:',
+                                            err
+                                        );
+                                    }
+                                }
+                            );
+                        }
+                    );
+                }
+
+                /*
+                 * Insert colors
+                 */
+                if (
+                    productData.colors &&
+                    Array.isArray(productData.colors) &&
+                    productData.colors.length > 0
+                ) {
+
+                    productData.colors.forEach(color => {
+
+                        query(
+                            `INSERT INTO color
+                                (product_code, name)
+                             VALUES
+                                ($1, $2)`,
+                            [
+                                productData.code,
+                                color
+                            ],
+                            (err) => {
+
+                                if (err) {
+                                    console.error(
+                                        'Error inserting color:',
+                                        err
+                                    );
+                                }
+                            }
+                        );
+                    });
+                }
+
+                callback(null, returnedId);
             }
         );
     });
 }
 
-function updateProduct(personalId, productData, callback) {
+
+function updateProduct(
+    personalId,
+    productData,
+    callback
+) {
+
     const updates = [];
     const params = [];
 
     if (productData.description !== undefined) {
-        updates.push('description = ?');
+        updates.push(`description = $${params.length + 1}`);
         params.push(productData.description);
     }
 
     if (productData.price !== undefined) {
-        updates.push('price = ?');
+        updates.push(`price = $${params.length + 1}`);
         params.push(productData.price);
     }
 
     if (productData.availability !== undefined) {
-        updates.push('availability = ?');
+        updates.push(`availability = $${params.length + 1}`);
         params.push(productData.availability);
     }
 
     if (productData.weight !== undefined) {
-        updates.push('weight = ?');
+        updates.push(`weight = $${params.length + 1}`);
         params.push(productData.weight);
     }
 
     if (productData.dimensions !== undefined) {
-        updates.push('dimensions = ?');
+        updates.push(`dimensions = $${params.length + 1}`);
         params.push(productData.dimensions);
     }
 
     if (productData.production_time !== undefined) {
-        updates.push('production_time = ?');
+        updates.push(`production_time = $${params.length + 1}`);
         params.push(productData.production_time);
     }
 
     if (productData.category_id !== undefined) {
-        updates.push('category_id = ?');
+        updates.push(`category_id = $${params.length + 1}`);
         params.push(productData.category_id);
     }
 
@@ -494,156 +893,345 @@ function updateProduct(personalId, productData, callback) {
 
     params.push(productData.code);
 
-    database.run(
-        `UPDATE product SET ${updates.join(', ')} WHERE code = ?`,
+    const codeParameter = params.length;
+
+    query(
+        `UPDATE product
+         SET ${updates.join(', ')}
+         WHERE code = $${codeParameter}`,
         params,
-        function(err) {
+        (err, result) => {
+
             if (err) {
                 callback(err, null);
-            } else {
-                // Log the change
-                const changesDesc = `Product updated: ${updates.join(', ')}`;
-                database.run(
-                    `INSERT INTO "change" (date_and_time, product_code, changes)
-           VALUES (datetime('now'), ?, ?)`,
-                    [productData.code, changesDesc],
-                    function(err) {
-                        if (err) {
-                            console.error('Error logging product update:', err);
-                        }
-                        // Log who made the change
-                        database.run(
-                            `INSERT INTO makes_change (personal_id, change_date_time, product_code)
-               VALUES (?, datetime('now'), ?)`,
-                            [personalId, productData.code],
-                            function(err) {
-                                if (err) {
-                                    console.error('Error logging change maker:', err);
-                                }
-                            }
+                return;
+            }
+
+            const changesDesc =
+                `Product updated: ${updates.join(', ')}`;
+
+            /*
+             * Log product change
+             */
+            query(
+                `INSERT INTO "change"
+                    (
+                        date_and_time,
+                        product_code,
+                        changes
+                    )
+                 VALUES
+                    (NOW(), $1, $2)`,
+                [
+                    productData.code,
+                    changesDesc
+                ],
+                (err) => {
+
+                    if (err) {
+                        console.error(
+                            'Error logging product update:',
+                            err
                         );
                     }
-                );
-
-                // Handle images if provided
-                if (productData.images && Array.isArray(productData.images)) {
-                    // Delete old images first
-                    database.run('DELETE FROM image WHERE product_code = ?', [productData.code], (err) => {
-                        if (!err) {
-                            // Insert new images
-                            productData.images.forEach(image => {
-                                database.run(
-                                    'INSERT INTO image (product_code, image) VALUES (?, ?)',
-                                    [productData.code, image]
-                                );
-                            });
-                        }
-                    });
                 }
+            );
 
-                // Handle colors if provided
-                if (productData.colors && Array.isArray(productData.colors)) {
-                    // Delete old colors first
-                    database.run('DELETE FROM color WHERE product_code = ?', [productData.code], (err) => {
-                        if (!err) {
-                            // Insert new colors
-                            productData.colors.forEach(color => {
-                                database.run(
-                                    'INSERT INTO color (product_code, color) VALUES (?, ?)',
-                                    [productData.code, color]
-                                );
-                            });
-                        }
-                    });
+            /*
+             * Log who made the change
+             */
+            query(
+                `INSERT INTO makes_change
+                    (
+                        personal_id,
+                        change_date_time,
+                        product_code
+                    )
+                 VALUES
+                    ($1, NOW(), $2)`,
+                [
+                    personalId,
+                    productData.code
+                ],
+                (err) => {
+
+                    if (err) {
+                        console.error(
+                            'Error logging change maker:',
+                            err
+                        );
+                    }
                 }
+            );
 
-                callback(null, this.changes);
-            }
-        }
-    );
-}
+            /*
+             * Images
+             */
+            if (
+                productData.images &&
+                Array.isArray(productData.images)
+            ) {
 
-function deleteProduct(productCode, storeId, personalId, callback) {
-    database.run('BEGIN TRANSACTION', (err) => {
-        if (err) {
-            callback(err);
-            return;
-        }
+                query(
+                    `DELETE FROM image
+                     WHERE product_code = $1`,
+                    [productData.code],
+                    (err) => {
 
-        // Log the deletion
-        database.run(
-            `INSERT INTO "change" (date_and_time, product_code, changes)
-       VALUES (datetime('now'), ?, ?)`,
-            [productCode, 'Product deleted'],
-            function(err) {
-                if (err) {
-                    database.run('ROLLBACK');
-                    callback(err);
-                    return;
-                }
-
-                // Log who deleted it
-                database.run(
-                    `INSERT INTO makes_change (personal_id, change_date_time, product_code)
-           VALUES (?, datetime('now'), ?)`,
-                    [personalId, productCode],
-                    function(err) {
                         if (err) {
-                            database.run('ROLLBACK');
-                            callback(err);
+                            console.error(
+                                'Error deleting old images:',
+                                err
+                            );
                             return;
                         }
 
-                        // Delete the product (cascades to image, color)
-                        database.run(
-                            'DELETE FROM product WHERE code = ? AND store_id = ?',
-                            [productCode, storeId],
-                            function(err) {
-                                if (err) {
-                                    database.run('ROLLBACK');
-                                    callback(err);
-                                } else {
-                                    database.run('COMMIT', callback);
-                                }
+                        productData.images.forEach(
+                            (image, index) => {
+
+                                query(
+                                    `INSERT INTO image
+                                        (
+                                            product_code,
+                                            image_url,
+                                            is_primary
+                                        )
+                                     VALUES
+                                        ($1, $2, $3)`,
+                                    [
+                                        productData.code,
+                                        image,
+                                        index === 0
+                                    ],
+                                    (err) => {
+
+                                        if (err) {
+                                            console.error(
+                                                'Error inserting image:',
+                                                err
+                                            );
+                                        }
+                                    }
+                                );
                             }
                         );
                     }
                 );
             }
-        );
-    });
-}
 
-// Category functions
-function getCategories(callback) {
-    database.all('SELECT * FROM category ORDER BY name', [], (err, rows) => {
-        callback(err, rows || []);
-    });
-}
+            /*
+             * Colors
+             */
+            if (
+                productData.colors &&
+                Array.isArray(productData.colors)
+            ) {
 
-function getCategoriesWithParents(callback) {
-    database.all(
-        `SELECT c1.*, c2.name as parent_name
-     FROM category c1
-     LEFT JOIN category c2 ON c1.parent_category_id = c2.category_id
-     ORDER BY c1.name`,
-        [],
-        (err, rows) => {
-            callback(err, rows || []);
+                query(
+                    `DELETE FROM color
+                     WHERE product_code = $1`,
+                    [productData.code],
+                    (err) => {
+
+                        if (err) {
+                            console.error(
+                                'Error deleting old colors:',
+                                err
+                            );
+                            return;
+                        }
+
+                        productData.colors.forEach(color => {
+
+                            query(
+                                `INSERT INTO color
+                                    (product_code, name)
+                                 VALUES
+                                    ($1, $2)`,
+                                [
+                                    productData.code,
+                                    color
+                                ],
+                                (err) => {
+
+                                    if (err) {
+                                        console.error(
+                                            'Error inserting color:',
+                                            err
+                                        );
+                                    }
+                                }
+                            );
+                        });
+                    }
+                );
+            }
+
+            callback(null, result.rowCount);
         }
     );
 }
 
+
+function deleteProduct(
+    productCode,
+    storeId,
+    personalId,
+    callback
+) {
+
+    pool.connect()
+        .then(client => {
+
+            return client.query('BEGIN')
+                .then(() => {
+
+                    return client.query(
+                        `INSERT INTO "change"
+                            (
+                                date_and_time,
+                                product_code,
+                                changes
+                            )
+                         VALUES
+                            (NOW(), $1, $2)`,
+                        [
+                            productCode,
+                            'Product deleted'
+                        ]
+                    );
+                })
+                .then(() => {
+
+                    return client.query(
+                        `INSERT INTO makes_change
+                            (
+                                personal_id,
+                                change_date_time,
+                                product_code
+                            )
+                         VALUES
+                            ($1, NOW(), $2)`,
+                        [
+                            personalId,
+                            productCode
+                        ]
+                    );
+                })
+                .then(() => {
+
+                    return client.query(
+                        `DELETE FROM product
+                         WHERE code = $1
+                           AND store_id = $2`,
+                        [
+                            productCode,
+                            storeId
+                        ]
+                    );
+                })
+                .then(result => {
+
+                    return client.query('COMMIT')
+                        .then(() => {
+
+                            client.release();
+
+                            callback(
+                                null,
+                                result.rowCount
+                            );
+                        });
+                })
+                .catch(err => {
+
+                    return client.query('ROLLBACK')
+                        .catch(() => {})
+                        .then(() => {
+
+                            client.release();
+                            callback(err);
+                        });
+                });
+        })
+        .catch(err => {
+            callback(err);
+        });
+}
+
+
+/*
+ * ============================================================
+ * CATEGORY FUNCTIONS
+ * ============================================================
+ */
+
+function getCategories(callback) {
+
+    query(
+        `SELECT *
+         FROM category
+         ORDER BY name`,
+        [],
+        (err, result) => {
+
+            callback(
+                err,
+                result ? result.rows : []
+            );
+        }
+    );
+}
+
+
+function getCategoriesWithParents(callback) {
+
+    query(
+        `SELECT
+            c1.*,
+            c2.name AS parent_name
+         FROM category c1
+         LEFT JOIN category c2
+           ON c1.parent_category_id =
+              c2.category_id
+         ORDER BY c1.name`,
+        [],
+        (err, result) => {
+
+            callback(
+                err,
+                result ? result.rows : []
+            );
+        }
+    );
+}
+
+
 function createCategory(categoryData, callback) {
-    database.run(
-        'INSERT INTO category (name, description, parent_category_id) VALUES (?, ?, ?)',
-        [categoryData.name, categoryData.description || null, categoryData.parent_id || null],
-        function(err) {
+
+    query(
+        `INSERT INTO category
+            (
+                name,
+                description,
+                parent_category_id
+            )
+         VALUES
+            ($1, $2, $3)
+         RETURNING category_id`,
+        [
+            categoryData.name,
+            categoryData.description || null,
+            categoryData.parent_id || null
+        ],
+        (err, result) => {
+
             if (err) {
                 callback(err, null);
             } else {
+
                 callback(null, {
-                    id: this.lastID,
+                    id: result.rows[0].category_id,
                     name: categoryData.name,
                     parent_id: categoryData.parent_id,
                     description: categoryData.description
@@ -653,141 +1241,257 @@ function createCategory(categoryData, callback) {
     );
 }
 
-// Store functions
+
+/*
+ * ============================================================
+ * STORE FUNCTIONS
+ * ============================================================
+ */
+
 function getStores(callback) {
-    database.all('SELECT * FROM store ORDER BY name', [], (err, rows) => {
-        callback(err, rows || []);
-    });
+
+    query(
+        `SELECT *
+         FROM store
+         ORDER BY name`,
+        [],
+        (err, result) => {
+
+            callback(
+                err,
+                result ? result.rows : []
+            );
+        }
+    );
 }
+
 
 function getStoreProducts(storeId, callback) {
-    database.all(
-        `SELECT p.*, c.name as category_name
-     FROM product p
-     JOIN category c ON p.category_id = c.category_id
-     WHERE p.store_id = ?
-     ORDER BY p.code`,
+
+    query(
+        `SELECT
+            p.*,
+            c.name AS category_name
+         FROM product p
+         JOIN category c
+           ON p.category_id = c.category_id
+         WHERE p.store_id = $1
+         ORDER BY p.code`,
         [storeId],
-        (err, rows) => {
-            if (err) {
-                callback(err, null);
-            } else {
-                callback(null, rows || []);
-            }
+        (err, result) => {
+
+            callback(
+                err,
+                result ? result.rows : []
+            );
         }
     );
 }
+
 
 function getStoreOrders(storeId, callback) {
-    database.all(
-        `SELECT o.*, c.first_name, c.last_name
-     FROM "order" o
-     JOIN client c ON o.client_id = c.client_id
-     WHERE o.store_id = ?
-     ORDER BY o.order_date DESC`,
+
+    query(
+        `SELECT
+            o.*,
+            c.first_name,
+            c.last_name
+         FROM "order" o
+         JOIN client c
+           ON o.client_id = c.client_id
+         WHERE o.store_id = $1
+         ORDER BY o.order_date DESC`,
         [storeId],
-        (err, rows) => {
+        (err, result) => {
+
             if (err) {
                 callback(err, null);
-            } else {
-                // Get order items for each order
-                let completed = 0;
-                const orders = rows || [];
-
-                if (orders.length === 0) {
-                    callback(null, []);
-                    return;
-                }
-
-                orders.forEach(order => {
-                    database.all(
-                        `SELECT oi.*, p.description
-             FROM order_items oi
-             JOIN product p ON oi.product_code = p.code
-             WHERE oi.order_num = ?`,
-                        [order.order_num],
-                        (err, items) => {
-                            if (!err) {
-                                order.items = items || [];
-                            } else {
-                                order.items = [];
-                            }
-                            completed++;
-                            if (completed === orders.length) {
-                                callback(null, orders);
-                            }
-                        }
-                    );
-                });
+                return;
             }
+
+            const orders = result.rows || [];
+
+            if (orders.length === 0) {
+                callback(null, []);
+                return;
+            }
+
+            let completed = 0;
+
+            orders.forEach(order => {
+
+                query(
+                    `SELECT
+                        oi.*,
+                        p.description
+                     FROM order_items oi
+                     JOIN product p
+                       ON oi.product_code = p.code
+                     WHERE oi.order_num = $1`,
+                    [order.order_num],
+                    (err, result) => {
+
+                        if (!err) {
+                            order.items =
+                                result.rows || [];
+                        } else {
+                            order.items = [];
+                        }
+
+                        completed++;
+
+                        if (completed === orders.length) {
+                            callback(null, orders);
+                        }
+                    }
+                );
+            });
         }
     );
 }
+
 
 function getStoreEmployees(storeId, callback) {
-    database.all(
-        `SELECT p.*, e.date_of_hire, perm.type as permission_type, perm.authorisation
-     FROM personal p
-     JOIN works_in_store w ON p.id = w.personal_id
-     LEFT JOIN employees e ON p.id = e.employee_id
-     LEFT JOIN permissions perm ON p.id = perm.personal_id
-     WHERE w.store_id = ?`,
+
+    query(
+        `SELECT
+            p.*,
+            e.date_of_hire,
+            perm.type AS permission_type,
+            perm.authorisation
+         FROM personal p
+         JOIN works_in_store w
+           ON p.id = w.personal_id
+         LEFT JOIN employees e
+           ON p.id = e.employee_id
+         LEFT JOIN permissions perm
+           ON p.id = perm.personal_id
+         WHERE w.store_id = $1`,
         [storeId],
-        (err, rows) => {
-            callback(err, rows || []);
+        (err, result) => {
+
+            callback(
+                err,
+                result ? result.rows : []
+            );
         }
     );
 }
+
 
 function getStoreReports(storeId, callback) {
-    database.all(
-        `SELECT * FROM report
-     WHERE store_id = ?
-     ORDER BY generated_at DESC`,
+
+    query(
+        `SELECT *
+         FROM report
+         WHERE store_id = $1
+         ORDER BY generated_at DESC`,
         [storeId],
-        (err, rows) => {
-            callback(err, rows || []);
+        (err, result) => {
+
+            callback(
+                err,
+                result ? result.rows : []
+            );
         }
     );
 }
 
+
 function getStoreStats(storeId, callback) {
+
     const stats = {};
 
-    // Get total products
-    database.get(
-        'SELECT COUNT(*) as total_products FROM product WHERE store_id = ?',
+    query(
+        `SELECT COUNT(*) AS total_products
+         FROM product
+         WHERE store_id = $1`,
         [storeId],
-        (err, row) => {
-            stats.total_products = row ? row.total_products : 0;
+        (err, result) => {
 
-            // Get total orders
-            database.get(
-                'SELECT COUNT(*) as total_orders FROM "order" WHERE store_id = ?',
+            if (err) {
+                callback(err, null);
+                return;
+            }
+
+            stats.total_products =
+                result.rows[0]
+                    ? Number(result.rows[0].total_products)
+                    : 0;
+
+            query(
+                `SELECT COUNT(*) AS total_orders
+                 FROM "order"
+                 WHERE store_id = $1`,
                 [storeId],
-                (err, row) => {
-                    stats.total_orders = row ? row.total_orders : 0;
+                (err, result) => {
 
-                    // Get total revenue
-                    database.get(
-                        `SELECT SUM(oi.price * oi.quantity) as total_revenue
-             FROM order_items oi
-             JOIN "order" o ON oi.order_num = o.order_num
-             WHERE o.store_id = ?`,
+                    if (err) {
+                        callback(err, null);
+                        return;
+                    }
+
+                    stats.total_orders =
+                        result.rows[0]
+                            ? Number(result.rows[0].total_orders)
+                            : 0;
+
+                    query(
+                        `SELECT
+                            COALESCE(
+                                SUM(
+                                    oi.price * oi.quantity
+                                ),
+                                0
+                            ) AS total_revenue
+                         FROM order_items oi
+                         JOIN "order" o
+                           ON oi.order_num =
+                              o.order_num
+                         WHERE o.store_id = $1`,
                         [storeId],
-                        (err, row) => {
-                            stats.total_revenue = row && row.total_revenue ? row.total_revenue : 0;
+                        (err, result) => {
 
-                            // Get average rating
-                            database.get(
-                                `SELECT AVG(rating) as avg_rating
-                 FROM review r
-                 JOIN product p ON r.product_code = p.code
-                 WHERE p.store_id = ?`,
+                            if (err) {
+                                callback(err, null);
+                                return;
+                            }
+
+                            stats.total_revenue =
+                                Number(
+                                    result.rows[0]
+                                        .total_revenue || 0
+                                );
+
+                            query(
+                                `SELECT
+                                    COALESCE(
+                                        AVG(r.rating),
+                                        0
+                                    ) AS avg_rating
+                                 FROM review r
+                                 JOIN product p
+                                   ON r.product_code =
+                                      p.code
+                                 WHERE p.store_id = $1`,
                                 [storeId],
-                                (err, row) => {
-                                    stats.avg_rating = row && row.avg_rating ? row.avg_rating : 0;
-                                    callback(null, stats);
+                                (err, result) => {
+
+                                    if (err) {
+                                        callback(err, null);
+                                        return;
+                                    }
+
+                                    stats.avg_rating =
+                                        Number(
+                                            result.rows[0]
+                                                .avg_rating || 0
+                                        );
+
+                                    callback(
+                                        null,
+                                        stats
+                                    );
                                 }
                             );
                         }
@@ -798,160 +1502,276 @@ function getStoreStats(storeId, callback) {
     );
 }
 
-// Order functions
+
+/*
+ * ============================================================
+ * ORDER FUNCTIONS
+ * ============================================================
+ */
+
 function createOrderNew(orderData, callback) {
-    database.run('BEGIN TRANSACTION', (err) => {
-        if (err) {
-            callback(err, null);
-            return;
-        }
 
-        database.run(
-            `INSERT INTO "order" (order_num, client_id, order_date, quantity, payment_method,
-        discount, delivery_address, store_id)
-       VALUES (?, ?, datetime('now'), ?, ?, ?, ?, ?)`,
-            [
-                orderData.order_num,
-                orderData.client_id,
-                orderData.quantity,
-                orderData.payment_method,
-                orderData.discount,
-                orderData.delivery_address,
-                orderData.store_id
-            ],
-            function(err) {
-                if (err) {
-                    database.run('ROLLBACK');
-                    callback(err, null);
-                    return;
-                }
+    pool.connect()
+        .then(client => {
 
-                let itemsInserted = 0;
-                const items = orderData.items || [];
+            return client.query('BEGIN')
+                .then(() => {
 
-                if (items.length === 0) {
-                    database.run('COMMIT');
-                    callback(null, orderData.order_num);
-                    return;
-                }
-
-                items.forEach(item => {
-                    database.run(
-                        `INSERT INTO order_items (order_num, product_code, quantity, price)
-             VALUES (?, ?, ?, ?)`,
-                        [orderData.order_num, item.product_code, item.quantity, item.price],
-                        function(err) {
-                            if (err) {
-                                database.run('ROLLBACK');
-                                callback(err, null);
-                                return;
-                            }
-
-                            itemsInserted++;
-                            if (itemsInserted === items.length) {
-                                database.run('COMMIT', (err) => {
-                                    if (err) {
-                                        callback(err, null);
-                                    } else {
-                                        callback(null, orderData.order_num);
-                                    }
-                                });
-                            }
-                        }
+                    return client.query(
+                        `INSERT INTO "order"
+                            (
+                                order_num,
+                                client_id,
+                                order_date,
+                                quantity,
+                                payment_method,
+                                discount,
+                                delivery_address,
+                                store_id
+                            )
+                         VALUES
+                            (
+                                $1,
+                                $2,
+                                NOW(),
+                                $3,
+                                $4,
+                                $5,
+                                $6,
+                                $7
+                            )`,
+                        [
+                            orderData.order_num,
+                            orderData.client_id,
+                            orderData.quantity,
+                            orderData.payment_method,
+                            orderData.discount,
+                            orderData.delivery_address,
+                            orderData.store_id
+                        ]
                     );
+                })
+                .then(() => {
+
+                    const items =
+                        orderData.items || [];
+
+                    if (items.length === 0) {
+                        return client.query('COMMIT')
+                            .then(() => {
+
+                                client.release();
+
+                                callback(
+                                    null,
+                                    orderData.order_num
+                                );
+                            });
+                    }
+
+                    return Promise.all(
+                        items.map(item => {
+
+                            return client.query(
+                                `INSERT INTO order_items
+                                    (
+                                        order_num,
+                                        product_code,
+                                        quantity,
+                                        price
+                                    )
+                                 VALUES
+                                    ($1, $2, $3, $4)`,
+                                [
+                                    orderData.order_num,
+                                    item.product_code,
+                                    item.quantity,
+                                    item.price
+                                ]
+                            );
+                        })
+                    )
+                        .then(() => client.query('COMMIT'))
+                        .then(() => {
+
+                            client.release();
+
+                            callback(
+                                null,
+                                orderData.order_num
+                            );
+                        });
+                })
+                .catch(err => {
+
+                    return client.query('ROLLBACK')
+                        .catch(() => {})
+                        .then(() => {
+
+                            client.release();
+                            callback(err, null);
+                        });
                 });
-            }
-        );
-    });
+        })
+        .catch(err => {
+            callback(err, null);
+        });
 }
+
 
 function getOrdersByClient(clientId, callback) {
-    database.all(
-        `SELECT o.*, s.name as store_name
-     FROM "order" o
-     JOIN store s ON o.store_id = s.store_id
-     WHERE o.client_id = ?
-     ORDER BY o.order_date DESC`,
+
+    query(
+        `SELECT
+            o.*,
+            s.name AS store_name
+         FROM "order" o
+         JOIN store s
+           ON o.store_id = s.store_id
+         WHERE o.client_id = $1
+         ORDER BY o.order_date DESC`,
         [clientId],
-        (err, rows) => {
+        (err, result) => {
+
             if (err) {
                 callback(err, null);
-            } else {
-                // Get order items for each order
-                let completed = 0;
-                const orders = rows || [];
-
-                if (orders.length === 0) {
-                    callback(null, []);
-                    return;
-                }
-
-                orders.forEach(order => {
-                    database.all(
-                        `SELECT oi.*, p.description
-             FROM order_items oi
-             JOIN product p ON oi.product_code = p.code
-             WHERE oi.order_num = ?`,
-                        [order.order_num],
-                        (err, items) => {
-                            if (!err) {
-                                order.items = items || [];
-                            } else {
-                                order.items = [];
-                            }
-                            completed++;
-                            if (completed === orders.length) {
-                                callback(null, orders);
-                            }
-                        }
-                    );
-                });
+                return;
             }
+
+            const orders = result.rows || [];
+
+            if (orders.length === 0) {
+                callback(null, []);
+                return;
+            }
+
+            let completed = 0;
+
+            orders.forEach(order => {
+
+                query(
+                    `SELECT
+                        oi.*,
+                        p.description
+                     FROM order_items oi
+                     JOIN product p
+                       ON oi.product_code = p.code
+                     WHERE oi.order_num = $1`,
+                    [order.order_num],
+                    (err, result) => {
+
+                        if (!err) {
+                            order.items =
+                                result.rows || [];
+                        } else {
+                            order.items = [];
+                        }
+
+                        completed++;
+
+                        if (completed === orders.length) {
+                            callback(null, orders);
+                        }
+                    }
+                );
+            });
         }
     );
 }
+
 
 function getAllOrders(callback) {
-    database.all(
-        `SELECT o.*, c.first_name, c.last_name, s.name as store_name
-     FROM "order" o
-     JOIN client c ON o.client_id = c.client_id
-     JOIN store s ON o.store_id = s.store_id
-     ORDER BY o.order_date DESC`,
+
+    query(
+        `SELECT
+            o.*,
+            c.first_name,
+            c.last_name,
+            s.name AS store_name
+         FROM "order" o
+         JOIN client c
+           ON o.client_id = c.client_id
+         JOIN store s
+           ON o.store_id = s.store_id
+         ORDER BY o.order_date DESC`,
         [],
-        (err, rows) => {
-            callback(err, rows || []);
+        (err, result) => {
+
+            callback(
+                err,
+                result ? result.rows : []
+            );
         }
     );
 }
 
-// Review functions
+
+/*
+ * ============================================================
+ * REVIEW FUNCTIONS
+ * ============================================================
+ */
+
 function createReviewNew(reviewData, callback) {
-    database.run(
-        `INSERT INTO review (review_id, client_id, product_code, rating, comment, review_date)
-     VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+
+    const reviewId =
+        'REV' +
+        Date.now().toString().slice(-8);
+
+    query(
+        `INSERT INTO review
+            (
+                review_id,
+                client_id,
+                product_code,
+                rating,
+                comment,
+                review_date
+            )
+         VALUES
+            ($1, $2, $3, $4, $5, NOW())
+         RETURNING review_id`,
         [
-            'REV' + Date.now().toString().slice(-8),
+            reviewId,
             reviewData.client_id,
             reviewData.product_code,
             reviewData.rating,
             reviewData.comment || ''
         ],
-        function(err) {
+        (err, result) => {
+
             if (err) {
                 callback(err, null);
             } else {
-                callback(null, this.lastID);
+                callback(
+                    null,
+                    result.rows[0].review_id
+                );
             }
         }
     );
 }
 
-// Request functions
+
+/*
+ * ============================================================
+ * REQUEST FUNCTIONS
+ * ============================================================
+ */
+
 function createRequest(requestData, callback) {
-    database.run(
-        `INSERT INTO request (request_num, date_and_time, problem, client_id, store_id)
-     VALUES (?, ?, ?, ?, ?)`,
+
+    query(
+        `INSERT INTO request
+            (
+                request_num,
+                date_and_time,
+                problem,
+                client_id,
+                store_id
+            )
+         VALUES
+            ($1, $2, $3, $4, $5)`,
         [
             requestData.request_num,
             requestData.date_and_time,
@@ -959,85 +1779,163 @@ function createRequest(requestData, callback) {
             requestData.client_id,
             requestData.store_id
         ],
-        function(err) {
+        (err) => {
+
             if (err) {
                 callback(err, null);
             } else {
-                callback(null, requestData.request_num);
+                callback(
+                    null,
+                    requestData.request_num
+                );
             }
         }
     );
 }
 
-// Refund functions
+
+/*
+ * ============================================================
+ * REFUND FUNCTIONS
+ * ============================================================
+ */
+
 function createRefund(refundData, callback) {
-    database.run(
-        `INSERT INTO refund (refund_id, order_num, amount, reason, request_date)
-     VALUES (?, ?, ?, ?, datetime('now'))`,
+
+    query(
+        `INSERT INTO refund
+            (
+                refund_id,
+                order_num,
+                amount,
+                reason,
+                request_date
+            )
+         VALUES
+            ($1, $2, $3, $4, NOW())`,
         [
             refundData.refund_id,
             refundData.order_num,
             refundData.amount,
             refundData.reason
         ],
-        function(err) {
+        (err) => {
+
             if (err) {
                 callback(err, null);
             } else {
-                callback(null, refundData.refund_id);
+                callback(
+                    null,
+                    refundData.refund_id
+                );
             }
         }
     );
 }
 
-// Employee task functions
-function getEmployeeTasks(personalId, storeId, callback) {
+
+/*
+ * ============================================================
+ * EMPLOYEE TASKS
+ * ============================================================
+ */
+
+function getEmployeeTasks(
+    personalId,
+    storeId,
+    callback
+) {
+
     const tasks = {
         pending_orders: [],
         pending_requests: [],
         pending_refunds: []
     };
 
-    // Get pending orders
-    database.all(
-        `SELECT o.*, c.first_name, c.last_name
-     FROM "order" o
-     JOIN client c ON o.client_id = c.client_id
-     WHERE o.store_id = ? AND o.status = 'pending'
-     ORDER BY o.order_date ASC`,
-        [storeId],
-        (err, rows) => {
+    /*
+     * Pending orders
+     */
+    query(
+        `SELECT
+            o.*,
+            c.first_name,
+            c.last_name
+         FROM "order" o
+         JOIN client c
+           ON o.client_id = c.client_id
+         WHERE o.store_id = $1
+           AND o.status = $2
+         ORDER BY o.order_date ASC`,
+        [
+            storeId,
+            'pending'
+        ],
+        (err, result) => {
+
             if (!err) {
-                tasks.pending_orders = rows || [];
+                tasks.pending_orders =
+                    result.rows || [];
             }
 
-            // Get pending requests
-            database.all(
-                `SELECT r.*, c.first_name, c.last_name
-         FROM request r
-         JOIN client c ON r.client_id = c.client_id
-         WHERE r.store_id = ? AND r.status = 'pending'
-         ORDER BY r.date_and_time ASC`,
-                [storeId],
-                (err, rows) => {
+            /*
+             * Pending requests
+             */
+            query(
+                `SELECT
+                    r.*,
+                    c.first_name,
+                    c.last_name
+                 FROM request r
+                 JOIN client c
+                   ON r.client_id = c.client_id
+                 WHERE r.store_id = $1
+                   AND r.status = $2
+                 ORDER BY r.date_and_time ASC`,
+                [
+                    storeId,
+                    'pending'
+                ],
+                (err, result) => {
+
                     if (!err) {
-                        tasks.pending_requests = rows || [];
+                        tasks.pending_requests =
+                            result.rows || [];
                     }
 
-                    // Get pending refunds
-                    database.all(
-                        `SELECT rf.*, o.client_id, c.first_name, c.last_name
-             FROM refund rf
-             JOIN "order" o ON rf.order_num = o.order_num
-             JOIN client c ON o.client_id = c.client_id
-             WHERE o.store_id = ? AND rf.status = 'pending'
-             ORDER BY rf.request_date ASC`,
-                        [storeId],
-                        (err, rows) => {
+                    /*
+                     * Pending refunds
+                     */
+                    query(
+                        `SELECT
+                            rf.*,
+                            o.client_id,
+                            c.first_name,
+                            c.last_name
+                         FROM refund rf
+                         JOIN "order" o
+                           ON rf.order_num =
+                              o.order_num
+                         JOIN client c
+                           ON o.client_id =
+                              c.client_id
+                         WHERE o.store_id = $1
+                           AND rf.status = $2
+                         ORDER BY rf.request_date ASC`,
+                        [
+                            storeId,
+                            'pending'
+                        ],
+                        (err, result) => {
+
                             if (!err) {
-                                tasks.pending_refunds = rows || [];
+                                tasks.pending_refunds =
+                                    result.rows || [];
                             }
-                            callback(null, tasks);
+
+                            callback(
+                                null,
+                                tasks
+                            );
                         }
                     );
                 }
@@ -1046,41 +1944,116 @@ function getEmployeeTasks(personalId, storeId, callback) {
     );
 }
 
-// Client stats functions
+
+/*
+ * ============================================================
+ * CLIENT STATISTICS
+ * ============================================================
+ */
+
 function getClientStats(clientId, callback) {
+
     const stats = {};
 
-    // Get total orders
-    database.get(
-        'SELECT COUNT(*) as total_orders FROM "order" WHERE client_id = ?',
+    query(
+        `SELECT COUNT(*) AS total_orders
+         FROM "order"
+         WHERE client_id = $1`,
         [clientId],
-        (err, row) => {
-            stats.total_orders = row ? row.total_orders : 0;
+        (err, result) => {
 
-            // Get total spent
-            database.get(
-                `SELECT SUM(oi.price * oi.quantity) as total_spent
-         FROM order_items oi
-         JOIN "order" o ON oi.order_num = o.order_num
-         WHERE o.client_id = ?`,
+            if (err) {
+                callback(err, null);
+                return;
+            }
+
+            stats.total_orders =
+                Number(
+                    result.rows[0]
+                        ? result.rows[0].total_orders
+                        : 0
+                );
+
+            query(
+                `SELECT
+                    COALESCE(
+                        SUM(
+                            oi.price * oi.quantity
+                        ),
+                        0
+                    ) AS total_spent
+                 FROM order_items oi
+                 JOIN "order" o
+                   ON oi.order_num = o.order_num
+                 WHERE o.client_id = $1`,
                 [clientId],
-                (err, row) => {
-                    stats.total_spent = row && row.total_spent ? row.total_spent : 0;
+                (err, result) => {
 
-                    // Get pending orders
-                    database.get(
-                        'SELECT COUNT(*) as pending_orders FROM "order" WHERE client_id = ? AND status = "pending"',
-                        [clientId],
-                        (err, row) => {
-                            stats.pending_orders = row ? row.pending_orders : 0;
+                    if (err) {
+                        callback(err, null);
+                        return;
+                    }
 
-                            // Get delivered orders
-                            database.get(
-                                'SELECT COUNT(*) as delivered_orders FROM "order" WHERE client_id = ? AND status = "delivered"',
-                                [clientId],
-                                (err, row) => {
-                                    stats.delivered_orders = row ? row.delivered_orders : 0;
-                                    callback(null, stats);
+                    stats.total_spent =
+                        Number(
+                            result.rows[0]
+                                ? result.rows[0].total_spent
+                                : 0
+                        );
+
+                    query(
+                        `SELECT COUNT(*) AS pending_orders
+                         FROM "order"
+                         WHERE client_id = $1
+                           AND status = $2`,
+                        [
+                            clientId,
+                            'pending'
+                        ],
+                        (err, result) => {
+
+                            if (err) {
+                                callback(err, null);
+                                return;
+                            }
+
+                            stats.pending_orders =
+                                Number(
+                                    result.rows[0]
+                                        ? result.rows[0]
+                                            .pending_orders
+                                        : 0
+                                );
+
+                            query(
+                                `SELECT
+                                    COUNT(*) AS delivered_orders
+                                 FROM "order"
+                                 WHERE client_id = $1
+                                   AND status = $2`,
+                                [
+                                    clientId,
+                                    'delivered'
+                                ],
+                                (err, result) => {
+
+                                    if (err) {
+                                        callback(err, null);
+                                        return;
+                                    }
+
+                                    stats.delivered_orders =
+                                        Number(
+                                            result.rows[0]
+                                                ? result.rows[0]
+                                                    .delivered_orders
+                                                : 0
+                                        );
+
+                                    callback(
+                                        null,
+                                        stats
+                                    );
                                 }
                             );
                         }
@@ -1091,96 +2064,177 @@ function getClientStats(clientId, callback) {
     );
 }
 
-// User functions for admin
-function getAllUsers(callback) {
-    const usersMap = new Map(); // Use Map to deduplicate by ID
 
-    // Get client users
-    database.all(
-        `SELECT client_id as id, first_name, last_name, email, 'client' as user_type,
-                NULL as username, NULL as role_priority
+/*
+ * ============================================================
+ * ADMIN USER FUNCTIONS
+ * ============================================================
+ */
+
+function getAllUsers(callback) {
+
+    query(
+        `SELECT
+            client_id AS id,
+            first_name,
+            last_name,
+            email,
+            'client' AS user_type,
+            NULL AS username,
+            5 AS role_priority
          FROM client
          ORDER BY client_id`,
         [],
-        (err, rows) => {
-            if (!err && rows) {
-                rows.forEach(row => {
-                    // Clients have lowest priority (5)
-                    row.role_priority = 5;
-                    usersMap.set(row.id, row);
-                });
+        (err, result) => {
+
+            if (err) {
+                callback(err, null);
+                return;
             }
 
-            // Get personal users (employees and store owners)
-            database.all(
-                `SELECT p.id, p.first_name, p.last_name, p.email,
-                        CASE 
-                            WHEN b.boss_id IS NOT NULL THEN 'store_owner'
-                            ELSE 'store_employee'
-                        END as user_type,
-                        NULL as username,
-                        CASE 
-                            WHEN b.boss_id IS NOT NULL THEN 2  -- store_owner priority 2
-                            ELSE 4                             -- store_employee priority 4
-                        END as role_priority
+            const usersMap = new Map();
+
+            result.rows.forEach(row => {
+                usersMap.set(row.id, row);
+            });
+
+            /*
+             * Personal users
+             */
+            query(
+                `SELECT
+                    p.id,
+                    p.first_name,
+                    p.last_name,
+                    p.email,
+                    CASE
+                        WHEN b.boss_id IS NOT NULL
+                            THEN 'store_owner'
+                        ELSE 'store_employee'
+                    END AS user_type,
+                    NULL AS username,
+                    CASE
+                        WHEN b.boss_id IS NOT NULL
+                            THEN 2
+                        ELSE 4
+                    END AS role_priority
                  FROM personal p
-                 LEFT JOIN boss b ON p.id = b.boss_id
-                 LEFT JOIN employees e ON p.id = e.employee_id
-                 WHERE b.boss_id IS NOT NULL OR e.employee_id IS NOT NULL
+                 LEFT JOIN boss b
+                   ON p.id = b.boss_id
+                 LEFT JOIN employees e
+                   ON p.id = e.employee_id
+                 WHERE b.boss_id IS NOT NULL
+                    OR e.employee_id IS NOT NULL
                  ORDER BY p.id`,
                 [],
-                (err, rows) => {
-                    if (!err && rows) {
-                        rows.forEach(row => {
-                            // Only add if not exists or current has higher priority (lower number)
-                            const existing = usersMap.get(row.id);
-                            if (!existing || (existing.role_priority && row.role_priority < existing.role_priority)) {
-                                usersMap.set(row.id, row);
-                            }
-                        });
+                (err, result) => {
+
+                    if (err) {
+                        callback(err, null);
+                        return;
                     }
 
-                    // Get system users (including admin)
-                    database.all(
-                        `SELECT id, username, email, user_type,
-                                CASE 
-                                    WHEN user_type = 'admin' THEN 1  -- admin highest priority
-                                    ELSE 3                            -- other system users priority 3
-                                END as role_priority
+                    result.rows.forEach(row => {
+
+                        const existing =
+                            usersMap.get(row.id);
+
+                        if (
+                            !existing ||
+                            (
+                                existing.role_priority &&
+                                row.role_priority <
+                                existing.role_priority
+                            )
+                        ) {
+                            usersMap.set(
+                                row.id,
+                                row
+                            );
+                        }
+                    });
+
+                    /*
+                     * System users
+                     */
+                    query(
+                        `SELECT
+                            id,
+                            username,
+                            email,
+                            user_type,
+                            CASE
+                                WHEN user_type = 'admin'
+                                    THEN 1
+                                ELSE 3
+                            END AS role_priority
                          FROM users
                          ORDER BY id`,
                         [],
-                        (err, rows) => {
-                            if (!err && rows) {
-                                rows.forEach(row => {
-                                    // System users have priority based on type
-                                    const existing = usersMap.get(row.id);
-                                    if (!existing || (existing.role_priority && row.role_priority < existing.role_priority)) {
-                                        // For system users, format the response properly
-                                        const userData = {
-                                            id: row.id,
-                                            username: row.username,
-                                            email: row.email,
-                                            user_type: row.user_type,
-                                            role_priority: row.role_priority
-                                        };
-                                        // Add first_name/last_name if not present
-                                        if (row.user_type === 'admin') {
-                                            userData.first_name = 'Admin';
-                                            userData.last_name = 'User';
-                                        }
-                                        usersMap.set(row.id, userData);
-                                    }
-                                });
+                        (err, result) => {
+
+                            if (err) {
+                                callback(err, null);
+                                return;
                             }
 
-                            // Convert Map to array and remove role_priority before sending
-                            const users = Array.from(usersMap.values()).map(user => {
-                                const { role_priority, ...userWithoutPriority } = user;
-                                return userWithoutPriority;
+                            result.rows.forEach(row => {
+
+                                const existing =
+                                    usersMap.get(row.id);
+
+                                if (
+                                    !existing ||
+                                    (
+                                        existing.role_priority &&
+                                        row.role_priority <
+                                        existing.role_priority
+                                    )
+                                ) {
+
+                                    const userData = {
+                                        id: row.id,
+                                        username: row.username,
+                                        email: row.email,
+                                        user_type: row.user_type,
+                                        role_priority: row.role_priority
+                                    };
+
+                                    if (
+                                        row.user_type ===
+                                        'admin'
+                                    ) {
+                                        userData.first_name =
+                                            'Admin';
+
+                                        userData.last_name =
+                                            'User';
+                                    }
+
+                                    usersMap.set(
+                                        row.id,
+                                        userData
+                                    );
+                                }
                             });
 
-                            callback(null, users);
+                            const users =
+                                Array.from(
+                                    usersMap.values()
+                                ).map(user => {
+
+                                    const {
+                                        role_priority,
+                                        ...userWithoutPriority
+                                    } = user;
+
+                                    return userWithoutPriority;
+                                });
+
+                            callback(
+                                null,
+                                users
+                            );
                         }
                     );
                 }
@@ -1189,58 +2243,117 @@ function getAllUsers(callback) {
     );
 }
 
-// Audit log function
-function logAudit(userId, action, resourceType, resourceId, details, ipAddress) {
-    database.run(
-        `INSERT INTO audit_log (user_id, action, resource_type, resource_id, details, ip_address)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-        [userId, action, resourceType, resourceId, details, ipAddress],
+
+/*
+ * ============================================================
+ * AUDIT LOG
+ * ============================================================
+ */
+
+function logAudit(
+    userId,
+    action,
+    resourceType,
+    resourceId,
+    details,
+    ipAddress
+) {
+
+    query(
+        `INSERT INTO audit_log
+            (
+                user_id,
+                action,
+                resource_type,
+                resource_id,
+                details,
+                ip_address
+            )
+         VALUES
+            ($1, $2, $3, $4, $5, $6)`,
+        [
+            userId,
+            action,
+            resourceType,
+            resourceId,
+            details,
+            ipAddress
+        ],
         (err) => {
+
             if (err) {
-                console.error('Error logging audit:', err);
+                console.error(
+                    'Error logging audit:',
+                    err
+                );
             }
         }
     );
 }
 
+
+/*
+ * ============================================================
+ * EXPORTS
+ * ============================================================
+ */
+
 module.exports = {
-    database,
+
+    pool,
+
+    query,
+
     ensureGeneralCategory,
     getGeneralCategoryId,
+
     getUserByUsername,
     getUserById,
     createUser,
+
     getClientByEmail,
     getClientById,
     createClient,
     verifyClientPassword,
+
     getPersonalByEmail,
     getPersonalById,
     verifyPassword,
     updatePasswordAndClearForce,
+
     getProducts,
     getProductById,
     getProductByCode,
     addProduct,
     updateProduct,
     deleteProduct,
+
     getCategories,
     getCategoriesWithParents,
     createCategory,
+
     getStores,
     getStoreProducts,
     getStoreOrders,
     getStoreEmployees,
     getStoreReports,
     getStoreStats,
+
     createOrderNew,
     getOrdersByClient,
     getAllOrders,
+
     createReviewNew,
+
     createRequest,
+
     createRefund,
+
     getEmployeeTasks,
+
     getClientStats,
+
     getAllUsers,
+
     logAudit
 };

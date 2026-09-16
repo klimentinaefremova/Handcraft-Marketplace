@@ -1,0 +1,18 @@
+CREATE OR REPLACE VIEW vw_monthly_sales_profit AS
+SELECT
+    s.store_id,
+    s.name AS store_name,
+    r.date,
+    r.month_and_year,
+    r.profit,
+    r.overall_profit,
+    ed.monthly_profit,
+    ed.sales,
+    ed.damages
+
+FROM store s
+JOIN report r
+    ON r.store_id = s.store_id
+LEFT JOIN exchanges_data ed
+    ON ed.store_id = r.store_id
+    AND ed.date = r.date;

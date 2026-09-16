@@ -1,0 +1,31 @@
+CREATE OR REPLACE FUNCTION get_employee_product_changes_last_month()
+RETURNS TABLE (
+    id BIGINT,
+    employee_name TEXT,
+    number_of_product_changes BIGINT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        e.id,
+        p.name AS employee_name,
+        COUNT(DISTINCT mc.date_and_time) AS number_of_product_changes
+    FROM employees e
+    JOIN personal p
+        ON e.id = p.id
+    LEFT JOIN makes_change mc
+        ON e.id = mc.id
+    LEFT JOIN change ch
+        ON mc.date_and_time = ch.date_and_time
+    WHERE
+        mc.date_and_time >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month'
+        AND mc.date_and_time < date_trunc('month', CURRENT_DATE)
+    GROUP BY
+        e.id,
+        p.name
+    ORDER BY
+        number_of_product_changes DESC;
+END;
+$$;

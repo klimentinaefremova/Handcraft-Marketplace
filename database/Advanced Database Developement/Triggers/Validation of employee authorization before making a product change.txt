@@ -1,0 +1,29 @@
+CREATE OR REPLACE FUNCTION validate_employee_authorization()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE v_authorisation TEXT;
+BEGIN
+    -- Get the employee's authorization
+    SELECT authorisation
+    INTO v_authorisation
+    FROM personal
+    WHERE id = NEW.id;
+    -- Check whether the employee exists
+    IF v_authorisation IS NULL THEN
+        RAISE EXCEPTION 'Employee % does not have valid authorization.', NEW.id;
+    END IF;
+    -- Check whether the authorization matches
+    IF NEW.authorisation IS DISTINCT FROM v_authorisation THEN
+        RAISE EXCEPTION 'Employee % is not authorized to make this product change.', NEW.id;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+CREATE TRIGGER trg_validate_employee_authorization
+BEFORE INSERT OR UPDATE
+ON makes_change
+FOR EACH ROW
+EXECUTE FUNCTION validate_employee_authorization();

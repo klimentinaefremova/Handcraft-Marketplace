@@ -1,0 +1,27 @@
+CREATE OR REPLACE FUNCTION get_unapproved_reports()
+RETURNS TABLE (
+    report_date DATE,
+    store_id INT,
+    overall_profit NUMERIC,
+    month_and_year TEXT,
+    profit NUMERIC
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        r.date AS report_date,
+        r.store_id,
+        r.overall_profit,
+        r.month_and_year,
+        r.profit
+    FROM report r
+    LEFT JOIN approves a
+        ON r.date = a.date
+        AND r.store_id = a.store_id
+    WHERE a.date IS NULL
+    ORDER BY
+        r.date DESC;
+END;
+$$;

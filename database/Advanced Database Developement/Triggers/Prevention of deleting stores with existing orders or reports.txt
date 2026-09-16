@@ -1,0 +1,22 @@
+CREATE OR REPLACE FUNCTION prevent_store_deletion()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- Check whether the store has existing reports
+    IF EXISTS ( SELECT 1 FROM report WHERE store_id = OLD.store_id ) THEN
+        RAISE EXCEPTION 'Store % cannot be deleted because it has existing reports.', OLD.store_id;
+    END IF;
+    -- Check whether the store has products associated with it
+    IF EXISTS ( SELECT 1 FROM sells WHERE store_id = OLD.store_id ) THEN
+        RAISE EXCEPTION 'Store % cannot be deleted because it has existing product records.', OLD.store_id;
+    END IF;
+    RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER trg_prevent_store_deletion
+BEFORE DELETE
+ON store
+FOR EACH ROW
+EXECUTE FUNCTION prevent_store_deletion();
