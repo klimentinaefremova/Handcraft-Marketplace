@@ -1,6 +1,6 @@
 const http = require('http');
 const url = require('url');
-const database = require('./database.js');
+const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -210,64 +210,27 @@ function getClientIp(req) {
         (req.connection.socket ? req.connection.socket.remoteAddress : null);
 }
 
-// ===== FIXED: requireAuth function to check both sessions and tempAdminSessions =====
 function requireAuth(req, res, callback) {
     const cookies = parseCookies(req);
     const sessionId = cookies.sessionId;
 
-    console.log(`🔐 requireAuth - Session ID from cookie: ${sessionId || 'none'}`);
-    console.log(`🔐 requireAuth - Sessions map size: ${sessions.size}`);
-    console.log(`🔐 requireAuth - TempAdminSessions map size: ${tempAdminSessions.size}`);
-
-    // Check both regular sessions and temp admin sessions
-    if (!sessionId) {
-        console.log(`❌ requireAuth - No session cookie, redirecting to login`);
+    if (!sessionId || !sessions.has(sessionId)) {
         res.writeHead(302, { 'Location': '/login.html' });
         res.end();
         return;
     }
 
-    // Check if session exists in regular sessions
-    if (sessions.has(sessionId)) {
-        const userId = sessions.get(sessionId);
-        console.log(`✅ requireAuth - Found in regular sessions, user: ${userId}`);
-        callback(userId);
-        return;
-    }
+    const userId = sessions.get(sessionId);
 
-    // Check if session exists in temp admin sessions
     if (tempAdminSessions.has(sessionId)) {
-        const userId = tempAdminSessions.get(sessionId);
-        console.log(`⚠️ requireAuth - Found in temp admin sessions, user: ${userId}`);
-
-        // For temp sessions, we need to check if the request is for allowed pages
-        // Allow access to change password page and API endpoints needed for password change
-        const allowedPaths = [
-            '/change-password.html',
-            '/api/force-change-password',
-            '/api/user',
-            '/style.css',
-            '/script.js',
-            '/images/'
-        ];
-
-        const isAllowed = allowedPaths.some(path => req.url.includes(path));
-
-        if (!isAllowed) {
-            console.log(`🔄 requireAuth - Redirecting to change password page`);
+        if (!req.url.includes('/change-password') && !req.url.includes('/api/force-change-password')) {
             res.writeHead(302, { 'Location': '/change-password.html?forced=true' });
             res.end();
             return;
         }
-
-        callback(userId);
-        return;
     }
 
-    // Session not found in either map
-    console.log(`❌ requireAuth - Session ID ${sessionId} not found in any session map`);
-    res.writeHead(302, { 'Location': '/login.html' });
-    res.end();
+    callback(userId);
 }
 
 function requireRole(roleName) {
@@ -354,7 +317,7 @@ function requireStoreOwner() {
                 const personalId = userIdStr.replace('personal_', '');
 
                 database.database.get(
-                    'SELECT boss_id FROM boss WHERE boss_id = ?',
+                    'SELECT boss_id FROM boss WHERE boss_id = $1',
                     [personalId],
                     (err, boss) => {
                         if (err || !boss) {
@@ -375,752 +338,819 @@ function requireStoreOwner() {
     };
 }
 
-// Database initialization function
-async function initializeDatabase() {
-    console.log('🔍 Checking database schema...');
 
-    // List of all required tables
-    const requiredTables = [
-        'client',
-        'store',
-        'category',
-        'users',
-        'personal',
-        'product',
-        'boss',
-        'employees',
-        'works_in_store',
-        'permissions',
-        'order',
-        'order_items',
-        'review',
-        'request',
-        'refund',
-        'report',
-        'audit_log',
-        'color',
-        'image',
-        'delivery_address',
-        'roles',
-        'user_roles'
-    ];
 
-    try {
-        // For SQLite, we need to use a different approach to check tables
-        const result = await new Promise((resolve, reject) => {
-            database.database.all(
-                "SELECT name FROM sqlite_master WHERE type='table'",
-                [],
-                (err, rows) => {
-                    if (err) reject(err);
-                    else resolve(rows || []);
-                }
-            );
-        });
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    host: process.env.PGHOST || process.env.DB_HOST || 'localhost',
+    port: Number(process.env.PGPORT || process.env.DB_PORT || 5432),
+    user: process.env.PGUSER || process.env.DB_USER || 'postgres',
+    password: process.env.PGPASSWORD || process.env.DB_PASSWORD || '',
+    database: process.env.PGDATABASE || process.env.DB_NAME || 'handcraft_marketplace',
+    max: Number(process.env.PG_POOL_MAX || 10),
+    idleTimeoutMillis: 30000
+});
 
-        const existingTables = result.map(row => row.name);
-        const missingTables = requiredTables.filter(table => !existingTables.includes(table));
+let transactionClient = null;
 
-        if (missingTables.length > 0) {
-            console.log(`⚠️ Missing tables: ${missingTables.join(', ')}`);
-            console.log('🔄 Recreating entire database...');
-
-            // Drop all tables in correct order (respecting foreign keys)
-            await dropAllTables();
-
-            // Create all tables
-            await createAllTables();
-
-            // Create indexes
-            await createIndexes();
-
-            // Insert initial data
-            await insertInitialData();
-
-            console.log('✅ Database recreation completed');
-        } else {
-            console.log('✅ All required tables exist');
-            // Even if tables exist, ensure admin user exists with ID 000000
-            await ensureAdminUser();
-        }
-    } catch (err) {
-        console.error('❌ Error checking database schema:', err);
-        console.log('⚠️ Attempting to recreate database anyway...');
-
-        try {
-            await dropAllTables();
-            await createAllTables();
-            await createIndexes();
-            await insertInitialData();
-            console.log('✅ Database recreation completed');
-        } catch (createErr) {
-            console.error('❌ Failed to recreate database:', createErr);
-        }
-    }
+function dbQuery(sql, params = [], callback) {
+    const client = transactionClient || pool;
+    client.query(sql, params)
+        .then(result => callback(null, result))
+        .catch(err => callback(err));
 }
 
-// Function to ensure admin user exists with ID 000000
-function ensureAdminUser() {
-    return new Promise((resolve) => {
-        database.database.get(
-            'SELECT * FROM users WHERE id = ? OR username = ? OR email = ?',
-            ['000000', 'admin', 'admin@handcraft.com'],
-            (err, existingAdmin) => {
-                if (err) {
-                    console.error('Error checking for existing admin:', err.message);
-                    resolve();
+const database = {
+    database: {
+        get(sql, params, callback) {
+            if (typeof params === 'function') {
+                callback = params;
+                params = [];
+            }
+            dbQuery(sql, params || [], (err, result) => {
+                callback(err, result && result.rows ? result.rows[0] : undefined);
+            });
+        },
+        all(sql, params, callback) {
+            if (typeof params === 'function') {
+                callback = params;
+                params = [];
+            }
+            dbQuery(sql, params || [], (err, result) => {
+                callback(err, result ? result.rows : []);
+            });
+        },
+        run(sql, params, callback) {
+            if (typeof params === 'function') {
+                callback = params;
+                params = [];
+            }
+            const normalized = String(sql).trim().toUpperCase();
+            if (normalized === 'BEGIN TRANSACTION' || normalized === 'BEGIN') {
+                if (transactionClient) {
+                    callback?.(null);
                     return;
                 }
-
-                // Insert admin user if it doesn't exist
-                if (!existingAdmin) {
-                    const adminId = '000000';
-                    const adminPassword = bcrypt.hashSync('Admin123!', 10);
-
-                    // Start a transaction
-                    database.database.run('BEGIN TRANSACTION', (err) => {
-                        if (err) {
-                            console.error('Error beginning transaction:', err);
-                            resolve();
-                            return;
-                        }
-
-                        // Insert into users table
-                        database.database.run(
-                            `INSERT INTO users (id, username, email, password, user_type, force_password_change)
-                             VALUES (?, ?, ?, ?, ?, ?)`,
-                            [adminId, 'admin', 'admin@handcraft.com', adminPassword, 'admin', 1],
-                            function(err) {
-                                if (err) {
-                                    database.database.run('ROLLBACK');
-                                    console.error('Error inserting admin user:', err.message);
-                                    resolve();
-                                    return;
-                                }
-
-                                // Insert into personal table (required for boss table)
-                                database.database.run(
-                                    `INSERT INTO personal (id, first_name, last_name, ssn, email, password)
-                                     VALUES (?, ?, ?, ?, ?, ?)`,
-                                    [adminId, 'Admin', 'User', '0000000000000', 'admin@handcraft.com', adminPassword],
-                                    function(err) {
-                                        if (err) {
-                                            database.database.run('ROLLBACK');
-                                            console.error('Error inserting admin personal:', err.message);
-                                            resolve();
-                                            return;
-                                        }
-
-                                        // Insert into boss table (store owner)
-                                        database.database.run(
-                                            `INSERT INTO boss (boss_id, signature)
-                                             VALUES (?, ?)`,
-                                            [adminId, 'Admin Signature'],
-                                            function(err) {
-                                                if (err) {
-                                                    database.database.run('ROLLBACK');
-                                                    console.error('Error inserting admin boss:', err.message);
-                                                    resolve();
-                                                    return;
-                                                }
-
-                                                // Insert into permissions
-                                                database.database.run(
-                                                    `INSERT INTO permissions (personal_id, type, authorisation)
-                                                     VALUES (?, ?, ?)`,
-                                                    [adminId, 'ADMIN', 'full_access'],
-                                                    function(err) {
-                                                        if (err) {
-                                                            console.error('Error inserting admin permissions:', err.message);
-                                                            // Continue even if this fails
-                                                        }
-
-                                                        // Assign admin role
-                                                        database.database.get(
-                                                            'SELECT role_id FROM roles WHERE name = ?',
-                                                            ['admin'],
-                                                            (err, adminRole) => {
-                                                                if (!err && adminRole) {
-                                                                    database.database.run(
-                                                                        'INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)',
-                                                                        [adminId, adminRole.role_id],
-                                                                        (err) => {
-                                                                            if (err) {
-                                                                                console.error('Error assigning admin role:', err.message);
-                                                                            }
-                                                                        }
-                                                                    );
-                                                                }
-
-                                                                database.database.run('COMMIT', (commitErr) => {
-                                                                    if (commitErr) {
-                                                                        console.error('Error committing transaction:', commitErr);
-                                                                        database.database.run('ROLLBACK');
-                                                                    } else {
-                                                                        console.log('\n');
-                                                                        console.log('🔐 ===== ADMIN CREDENTIALS =====');
-                                                                        console.log('🆔 ID: 000000');
-                                                                        console.log('👤 Username: admin');
-                                                                        console.log('📧 Email: admin@handcraft.com');
-                                                                        console.log('🔑 Password: Admin123!');
-                                                                        console.log('⚠️ This is a first-time login. You will be required to change your password after 2FA verification.');
-                                                                        console.log('================================\n');
-                                                                    }
-                                                                    resolve();
-                                                                });
-                                                            }
-                                                        );
-                                                    }
-                                                );
-                                            }
-                                        );
-                                    }
-                                );
-                            }
-                        );
+                pool.connect().then(client => {
+                    transactionClient = client;
+                    return client.query('BEGIN');
+                }).then(() => callback?.(null))
+                    .catch(err => {
+                        if (transactionClient) transactionClient.release();
+                        transactionClient = null;
+                        callback?.(err);
                     });
-                } else {
-                    console.log('✅ Admin user already exists with ID:', existingAdmin.id);
-                    resolve();
-                }
-            }
-        );
-    });
-}
-
-function dropAllTables() {
-    return new Promise((resolve, reject) => {
-        console.log('🗑️ Dropping all tables...');
-
-        // Drop in reverse order of creation (respect foreign keys)
-        const dropQueries = [
-            'DROP TABLE IF EXISTS user_roles',
-            'DROP TABLE IF EXISTS roles',
-            'DROP TABLE IF EXISTS delivery_address',
-            'DROP TABLE IF EXISTS image',
-            'DROP TABLE IF EXISTS color',
-            'DROP TABLE IF EXISTS audit_log',
-            'DROP TABLE IF EXISTS report',
-            'DROP TABLE IF EXISTS refund',
-            'DROP TABLE IF EXISTS request',
-            'DROP TABLE IF EXISTS review',
-            'DROP TABLE IF EXISTS order_items',
-            'DROP TABLE IF EXISTS "order"',
-            'DROP TABLE IF EXISTS permissions',
-            'DROP TABLE IF EXISTS works_in_store',
-            'DROP TABLE IF EXISTS employees',
-            'DROP TABLE IF EXISTS boss',
-            'DROP TABLE IF EXISTS product',
-            'DROP TABLE IF EXISTS personal',
-            'DROP TABLE IF EXISTS users',
-            'DROP TABLE IF EXISTS category',
-            'DROP TABLE IF EXISTS store',
-            'DROP TABLE IF EXISTS client'
-        ];
-
-        let index = 0;
-
-        function runNext() {
-            if (index >= dropQueries.length) {
-                console.log('✅ All tables dropped');
-                resolve();
                 return;
             }
-
-            database.database.run(dropQueries[index], [], (err) => {
-                if (err) {
-                    console.error(`Error dropping table: ${err.message}`);
-                    // Continue anyway
+            if (normalized === 'COMMIT') {
+                if (!transactionClient) {
+                    callback?.(null);
+                    return;
                 }
-                index++;
-                runNext();
+                const client = transactionClient;
+                client.query('COMMIT')
+                    .then(() => {
+                        transactionClient = null;
+                        client.release();
+                        callback?.(null);
+                    })
+                    .catch(err => {
+                        transactionClient = null;
+                        client.release();
+                        callback?.(err);
+                    });
+                return;
+            }
+            if (normalized === 'ROLLBACK') {
+                if (!transactionClient) {
+                    callback?.(null);
+                    return;
+                }
+                const client = transactionClient;
+                client.query('ROLLBACK')
+                    .then(() => {
+                        transactionClient = null;
+                        client.release();
+                        callback?.(null);
+                    })
+                    .catch(err => {
+                        transactionClient = null;
+                        client.release();
+                        callback?.(err);
+                    });
+                return;
+            }
+            dbQuery(sql, params || [], (err, result) => {
+                if (callback) {
+                    callback.call(
+                        { changes: result ? result.rowCount : 0, lastID: result?.rows?.[0]?.id },
+                        err
+                    );
+                }
             });
         }
+    },
 
-        runNext();
-    });
-}
+    async initializeDatabase() {
+        const schema = `
 
-function createAllTables() {
-    return new Promise((resolve, reject) => {
-        console.log('🏗️ Creating tables...');
-
-        const createQueries = [
-            // Client table (SERIAL ID starting from 1000)
-            `CREATE TABLE IF NOT EXISTS client (
-                client_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                first_name VARCHAR(100) NOT NULL,
-                last_name VARCHAR(100) NOT NULL,
-                email VARCHAR(255) UNIQUE NOT NULL,
-                password VARCHAR(255) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`,
-
-            // Store table (VARCHAR ID)
-            `CREATE TABLE IF NOT EXISTS store (
-                store_id VARCHAR(10) PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
+            CREATE TABLE IF NOT EXISTS category (
+                                                    id SERIAL PRIMARY KEY,
+                                                    name VARCHAR(50) NOT NULL,
+                parent_category_id INTEGER REFERENCES category(id) ON DELETE SET NULL
+                );
+            CREATE TABLE IF NOT EXISTS store (
+                                                 store_id VARCHAR(3) PRIMARY KEY,
+                name VARCHAR(50) UNIQUE NOT NULL,
                 date_of_founding DATE NOT NULL,
-                physical_address TEXT NOT NULL,
-                store_email VARCHAR(255) UNIQUE NOT NULL,
-                rating DECIMAL(3,2) DEFAULT 0.0
-            )`,
+                physical_address VARCHAR(100) NOT NULL,
+                store_email VARCHAR(40) UNIQUE NOT NULL CHECK (store_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'),
+                rating DECIMAL(2,1) NOT NULL DEFAULT 0 CHECK (rating >= 0 AND rating <= 5)
+                );
+            CREATE TABLE IF NOT EXISTS personal (
+                                                    id VARCHAR(10) PRIMARY KEY,
+                first_name VARCHAR(20) NOT NULL,
+                last_name VARCHAR(20) NOT NULL,
+                ssn VARCHAR(13) UNIQUE NOT NULL CHECK (ssn ~ '^[0-9]{13}$'),
+                email VARCHAR(50) UNIQUE NOT NULL CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'),
+                password VARCHAR NOT NULL
+                );
+            CREATE TABLE IF NOT EXISTS permissions (
+                                                       personal_is VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
+                type VARCHAR(50) NOT NULL,
+                authorisation VARCHAR(50) NOT NULL
+                );
+            CREATE TABLE IF NOT EXISTS boss (
+                                                boss_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE
+                );
+            CREATE TABLE IF NOT EXISTS employees (
+                                                     employee_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
+                date_of_hire DATE NOT NULL
+                );
+            CREATE TABLE IF NOT EXISTS client (
+                                                  client_id SERIAL PRIMARY KEY,
+                                                  first_name VARCHAR(50) NOT NULL,
+                last_name VARCHAR(50) NOT NULL,
+                email VARCHAR(50) UNIQUE NOT NULL CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'),
+                password VARCHAR NOT NULL
+                );
+            CREATE TABLE IF NOT EXISTS product (
+                                                   code VARCHAR(8) PRIMARY KEY,
+                price DECIMAL(10,2) NOT NULL CHECK (price >= 0),
+                availability INTEGER NOT NULL DEFAULT 0,
+                weight DECIMAL(5,2) NOT NULL CHECK (weight > 0),
+                width_x_length_x_depth VARCHAR(20) NOT NULL,
+                aprox_production_time INTEGER NOT NULL,
+                description VARCHAR(500) NOT NULL,
+                category_id INTEGER NOT NULL REFERENCES category(id) ON DELETE SET NULL,
+                store_id VARCHAR(3) REFERENCES store(store_id) ON DELETE CASCADE
+                );
+            CREATE TABLE IF NOT EXISTS image (
+                                                 product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
+                image VARCHAR NOT NULL DEFAULT 'Image not found!'
+                );
+            CREATE TABLE IF NOT EXISTS color (
+                                                 product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
+                color VARCHAR(50)
+                );
+            CREATE TABLE IF NOT EXISTS delivery_address (
+                                                            client_id INTEGER PRIMARY KEY REFERENCES client(client_id) ON DELETE CASCADE,
+                address VARCHAR(200) NOT NULL,
+                city VARCHAR(30) NOT NULL,
+                postcode VARCHAR(20) NOT NULL,
+                country VARCHAR(40) NOT NULL,
+                is_default BOOLEAN DEFAULT TRUE
+                );
+            CREATE TABLE IF NOT EXISTS "order" (
+                                                   order_num VARCHAR(11) PRIMARY KEY,
+                client_id INTEGER REFERENCES client(client_id) ON DELETE CASCADE,
+                status VARCHAR(20) NOT NULL DEFAULT 'placed order',
+                last_date_mod TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                payment_method VARCHAR(250) NOT NULL,
+                discount DECIMAL(5,2) DEFAULT 0 CHECK (discount >= 0 AND discount <= 100),
+                store_id VARCHAR(3) REFERENCES store(store_id) ON DELETE SET NULL,
+                order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                quantity INTEGER DEFAULT 0,
+                delivery_address VARCHAR(500),
+                CONSTRAINT check_status CHECK (status IN ('placed order','being processed','shipping','delivered','canceled'))
+                );
+            CREATE TABLE IF NOT EXISTS review (
+                                                  order_num VARCHAR(11) PRIMARY KEY REFERENCES "order"(order_num) ON DELETE CASCADE,
+                comment VARCHAR(300),
+                rating DECIMAL(2,1) NOT NULL CHECK (rating >= 0 AND rating <= 5),
+                last_mod_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                review_id VARCHAR(20) UNIQUE,
+                client_id INTEGER REFERENCES client(client_id) ON DELETE SET NULL,
+                product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
+                review_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            CREATE TABLE IF NOT EXISTS refund (
+                                                  refund_id VARCHAR(50) PRIMARY KEY,
+                order_num VARCHAR(11) REFERENCES "order"(order_num) ON DELETE CASCADE,
+                reason VARCHAR(300),
+                amount DECIMAL(10,2) NOT NULL,
+                status VARCHAR(100) NOT NULL DEFAULT 'requested refund',
+                request_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                processed_date TIMESTAMP
+                );
+            CREATE TABLE IF NOT EXISTS report (
+                                                  date TIMESTAMP NOT NULL,
+                                                  store_id VARCHAR(3) NOT NULL REFERENCES store(store_id) ON DELETE CASCADE,
+                overall_profit NUMERIC NOT NULL DEFAULT 0 CHECK (overall_profit >= 0),
+                sales_trend VARCHAR(100) NOT NULL DEFAULT '',
+                marketing_growth VARCHAR(100) NOT NULL DEFAULT '',
+                owner_signature VARCHAR(50) NOT NULL DEFAULT 'Not signed yet',
+                id VARCHAR(50) UNIQUE,
+                period VARCHAR(50),
+                start_date DATE,
+                end_date DATE,
+                type VARCHAR(50),
+                generated_by VARCHAR(10) REFERENCES personal(id) ON DELETE SET NULL,
+                generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (date, store_id)
+                );
+            CREATE TABLE IF NOT EXISTS monthly_profit (
+                                                          report_date TIMESTAMP NOT NULL,
+                                                          store_id VARCHAR(3) NOT NULL,
+                month_and_year DATE NOT NULL,
+                profit NUMERIC NOT NULL DEFAULT 0,
+                PRIMARY KEY (report_date, store_id),
+                FOREIGN KEY (report_date, store_id) REFERENCES report(date, store_id) ON DELETE CASCADE
+                );
+            CREATE TABLE IF NOT EXISTS exchanges_data (
+                                                          report_date TIMESTAMP NOT NULL,
+                                                          store_id VARCHAR(3) NOT NULL,
+                monthly_profit NUMERIC NOT NULL DEFAULT 0,
+                date TIMESTAMP NOT NULL,
+                sales NUMERIC NOT NULL DEFAULT 0,
+                damages NUMERIC NOT NULL DEFAULT 0 CHECK (damages <= 0),
+                PRIMARY KEY (report_date, store_id),
+                FOREIGN KEY (report_date, store_id) REFERENCES report(date, store_id) ON DELETE CASCADE
+                );
+            CREATE TABLE IF NOT EXISTS request (
+                                                   request_num VARCHAR(14) PRIMARY KEY,
+                date_and_time TIMESTAMP NOT NULL,
+                problem VARCHAR(300) NOT NULL,
+                notes_of_communication VARCHAR,
+                customer_satisfaction NUMERIC NOT NULL DEFAULT 0,
+                client_id INTEGER REFERENCES client(client_id) ON DELETE CASCADE,
+                store_id VARCHAR(3) REFERENCES store(store_id) ON DELETE CASCADE,
+                status VARCHAR(50) DEFAULT 'pending'
+                );
+            CREATE TABLE IF NOT EXISTS makes_request (
+                                                         client_id INTEGER NOT NULL REFERENCES client(client_id) ON DELETE CASCADE,
+                order_num VARCHAR(11) UNIQUE NOT NULL REFERENCES "order"(order_num) ON DELETE CASCADE,
+                PRIMARY KEY(client_id, order_num)
+                );
+            CREATE TABLE IF NOT EXISTS answers (
+                                                   request_num VARCHAR(14) REFERENCES request(request_num) ON DELETE CASCADE,
+                personal_id VARCHAR(10) NOT NULL REFERENCES personal(id) ON DELETE CASCADE,
+                PRIMARY KEY(request_num, personal_id)
+                );
+            CREATE TABLE IF NOT EXISTS for_store (
+                                                     request_num VARCHAR(14) REFERENCES request(request_num) ON DELETE CASCADE,
+                store_id VARCHAR(3) REFERENCES store(store_id) ON DELETE CASCADE,
+                PRIMARY KEY(request_num, store_id)
+                );
+            CREATE TABLE IF NOT EXISTS "change" (
+                                                    date_and_time TIMESTAMP NOT NULL,
+                                                    product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
+                changes VARCHAR NOT NULL,
+                PRIMARY KEY(date_and_time, product_code)
+                );
+            CREATE TABLE IF NOT EXISTS makes_change (
+                                                        personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
+                change_date_time TIMESTAMP,
+                product_code VARCHAR(8),
+                PRIMARY KEY(personal_id, change_date_time, product_code),
+                FOREIGN KEY(change_date_time, product_code) REFERENCES "change"(date_and_time, product_code) ON DELETE CASCADE
+                );
+            CREATE TABLE IF NOT EXISTS works_in_store (
+                                                          personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
+                store_id VARCHAR(3) REFERENCES store(store_id) ON DELETE CASCADE,
+                PRIMARY KEY(personal_id, store_id)
+                );
+            CREATE TABLE IF NOT EXISTS worked (
+                                                  personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
+                report_date TIMESTAMP,
+                store_id VARCHAR(3),
+                wage NUMERIC NOT NULL CHECK(wage >= 0),
+                pay_method VARCHAR DEFAULT 'full_time' CHECK(pay_method IN ('full_time','part-time','custom')),
+                total_hours NUMERIC NOT NULL,
+                week VARCHAR(23) NOT NULL,
+                PRIMARY KEY(personal_id, report_date, store_id),
+                FOREIGN KEY(report_date, store_id) REFERENCES report(date, store_id) ON DELETE CASCADE
+                );
+            CREATE TABLE IF NOT EXISTS sells (
+                                                 product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
+                store_id VARCHAR(3) REFERENCES store(store_id) ON DELETE CASCADE,
+                discount NUMERIC NOT NULL DEFAULT 0,
+                PRIMARY KEY(product_code, store_id)
+                );
+            CREATE TABLE IF NOT EXISTS includes (
+                                                    order_num VARCHAR(11) REFERENCES "order"(order_num) ON DELETE CASCADE,
+                product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
+                quantity INTEGER NOT NULL CHECK(quantity >= 0),
+                PRIMARY KEY(order_num, product_code)
+                );
+            CREATE TABLE IF NOT EXISTS approves (
+                                                    boss_id VARCHAR(10) REFERENCES boss(boss_id) ON DELETE CASCADE,
+                report_date TIMESTAMP,
+                store_id VARCHAR(3),
+                owner_signature VARCHAR NOT NULL,
+                PRIMARY KEY(boss_id, report_date, store_id),
+                FOREIGN KEY(report_date, store_id) REFERENCES report(date, store_id) ON DELETE CASCADE
+                );
 
-            // Category table (SERIAL ID starting from 1)
-            `CREATE TABLE IF NOT EXISTS category (
-                category_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name VARCHAR(100) NOT NULL,
-                description TEXT,
-                parent_category_id INTEGER REFERENCES category(category_id) ON DELETE SET NULL
-            )`,
-
-            // Users table (VARCHAR ID)
-            `CREATE TABLE IF NOT EXISTS users (
-                id VARCHAR(50) PRIMARY KEY,
+-- Application support tables required by the existing HTTP/authentication layer.
+            CREATE TABLE IF NOT EXISTS users (
+                                                 id VARCHAR(50) PRIMARY KEY,
                 username VARCHAR(100) UNIQUE NOT NULL,
                 email VARCHAR(255) UNIQUE NOT NULL,
                 password VARCHAR(255) NOT NULL,
                 user_type VARCHAR(50) NOT NULL,
-                force_password_change INTEGER DEFAULT 0,
+                force_password_change BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`,
-
-            // Personal table (VARCHAR ID - format: storeId(3) + '001' for owner, storeId(3) + employeeNum(3) for employees)
-            `CREATE TABLE IF NOT EXISTS personal (
-                id VARCHAR(10) PRIMARY KEY,
-                first_name VARCHAR(100) NOT NULL,
-                last_name VARCHAR(100) NOT NULL,
-                ssn VARCHAR(13) UNIQUE NOT NULL,
-                email VARCHAR(255) UNIQUE NOT NULL,
-                password VARCHAR(255) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`,
-
-            // Product table (VARCHAR ID)
-            `CREATE TABLE IF NOT EXISTS product (
-                id VARCHAR(50) PRIMARY KEY,
-                code VARCHAR(20) UNIQUE NOT NULL,
-                description TEXT NOT NULL,
-                price DECIMAL(10,2) NOT NULL,
-                availability INTEGER NOT NULL DEFAULT 0,
-                weight DECIMAL(10,2),
-                dimensions VARCHAR(50),
-                production_time INTEGER,
-                category_id INTEGER REFERENCES category(category_id) ON DELETE SET NULL,
-                store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`,
-
-            // Boss table (VARCHAR ID - references personal.id)
-            `CREATE TABLE IF NOT EXISTS boss (
-                boss_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
-                signature TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`,
-
-            // Employees table (VARCHAR ID - references personal.id)
-            `CREATE TABLE IF NOT EXISTS employees (
-                employee_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
-                date_of_hire DATE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`,
-
-            // Works_in_store table (junction)
-            `CREATE TABLE IF NOT EXISTS works_in_store (
-                personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
-                store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
-                PRIMARY KEY (personal_id, store_id)
-            )`,
-
-            // Permissions table
-            `CREATE TABLE IF NOT EXISTS permissions (
-                permission_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
-                type VARCHAR(50) NOT NULL,
-                authorisation TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`,
-
-            // Order table (VARCHAR ID)
-            `CREATE TABLE IF NOT EXISTS "order" (
-                order_num VARCHAR(20) PRIMARY KEY,
-                client_id INTEGER REFERENCES client(client_id) ON DELETE SET NULL,
-                order_date TIMESTAMP NOT NULL,
-                quantity INTEGER NOT NULL,
-                payment_method VARCHAR(50) NOT NULL,
-                discount DECIMAL(10,2) DEFAULT 0,
-                delivery_address TEXT NOT NULL,
-                store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE SET NULL,
-                status VARCHAR(50) DEFAULT 'pending',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`,
-
-            // Order_items table
-            `CREATE TABLE IF NOT EXISTS order_items (
-                item_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                order_num VARCHAR(20) REFERENCES "order"(order_num) ON DELETE CASCADE,
-                product_code VARCHAR(20) REFERENCES product(code) ON DELETE SET NULL,
-                quantity INTEGER NOT NULL,
-                price DECIMAL(10,2) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`,
-
-            // Review table (VARCHAR ID)
-            `CREATE TABLE IF NOT EXISTS review (
-                review_id VARCHAR(20) PRIMARY KEY,
-                client_id INTEGER REFERENCES client(client_id) ON DELETE SET NULL,
-                product_code VARCHAR(20) REFERENCES product(code) ON DELETE CASCADE,
-                rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
-                comment TEXT,
-                review_date TIMESTAMP NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`,
-
-            // Request table (VARCHAR ID)
-            `CREATE TABLE IF NOT EXISTS request (
-                request_num VARCHAR(50) PRIMARY KEY,
-                date_and_time TIMESTAMP NOT NULL,
-                problem TEXT NOT NULL,
-                client_id INTEGER REFERENCES client(client_id) ON DELETE SET NULL,
-                store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
-                status VARCHAR(50) DEFAULT 'pending',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`,
-
-            // Refund table (VARCHAR ID)
-            `CREATE TABLE IF NOT EXISTS refund (
-                refund_id VARCHAR(50) PRIMARY KEY,
-                order_num VARCHAR(20) REFERENCES "order"(order_num) ON DELETE CASCADE,
-                amount DECIMAL(10,2) NOT NULL,
-                reason TEXT NOT NULL,
-                status VARCHAR(50) DEFAULT 'pending',
-                request_date TIMESTAMP NOT NULL,
-                processed_date TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`,
-
-            // Report table (VARCHAR ID)
-            `CREATE TABLE IF NOT EXISTS report (
-                id VARCHAR(50) PRIMARY KEY,
-                store_id VARCHAR(10) REFERENCES store(store_id) ON DELETE CASCADE,
-                period VARCHAR(50) NOT NULL,
-                start_date DATE NOT NULL,
-                end_date DATE NOT NULL,
-                type VARCHAR(50) NOT NULL,
-                generated_by VARCHAR(10) REFERENCES personal(id) ON DELETE SET NULL,
-                generated_at TIMESTAMP NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`,
-
-            // Audit_log table (SERIAL ID)
-            `CREATE TABLE IF NOT EXISTS audit_log (
-                log_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id VARCHAR(50),
+                );
+            CREATE TABLE IF NOT EXISTS roles (
+                                                 role_id SERIAL PRIMARY KEY,
+                                                 name VARCHAR(50) UNIQUE NOT NULL,
+                description TEXT
+                );
+            CREATE TABLE IF NOT EXISTS user_roles (
+                                                      user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+                role_id INTEGER REFERENCES roles(role_id) ON DELETE CASCADE,
+                PRIMARY KEY(user_id, role_id)
+                );
+            CREATE TABLE IF NOT EXISTS audit_log (
+                                                     log_id BIGSERIAL PRIMARY KEY,
+                                                     user_id VARCHAR(50),
                 action VARCHAR(100) NOT NULL,
                 resource_type VARCHAR(50),
                 resource_id VARCHAR(50),
                 details TEXT,
                 ip_address VARCHAR(45),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`,
+                );
+            CREATE INDEX IF NOT EXISTS idx_product_store ON product(store_id);
+            CREATE INDEX IF NOT EXISTS idx_product_category ON product(category_id);
+            CREATE INDEX IF NOT EXISTS idx_order_client ON "order"(client_id);
+            CREATE INDEX IF NOT EXISTS idx_order_store ON "order"(store_id);
+            CREATE INDEX IF NOT EXISTS idx_order_date ON "order"(order_date);
+            CREATE INDEX IF NOT EXISTS idx_review_client ON review(client_id);
+            CREATE INDEX IF NOT EXISTS idx_review_product ON review(product_code);
+            CREATE INDEX IF NOT EXISTS idx_request_client ON request(client_id);
+            CREATE INDEX IF NOT EXISTS idx_request_store ON request(store_id);
+            CREATE INDEX IF NOT EXISTS idx_refund_order ON refund(order_num);
+            CREATE INDEX IF NOT EXISTS idx_personal_email ON personal(email);
+            CREATE INDEX IF NOT EXISTS idx_client_email ON client(email);
+            CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+            CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+            CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
 
-            // Color table (SERIAL ID)
-            `CREATE TABLE IF NOT EXISTS color (
-                color_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name VARCHAR(50) NOT NULL,
-                hex_code VARCHAR(7) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`,
-
-            // Image table (SERIAL ID)
-            `CREATE TABLE IF NOT EXISTS image (
-                image_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                product_code VARCHAR(20) REFERENCES product(code) ON DELETE CASCADE,
-                image_url TEXT NOT NULL,
-                is_primary BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`,
-
-            // Delivery_address table (SERIAL ID)
-            `CREATE TABLE IF NOT EXISTS delivery_address (
-                address_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                client_id INTEGER REFERENCES client(client_id) ON DELETE CASCADE,
-                address TEXT NOT NULL,
-                city VARCHAR(100) NOT NULL,
-                postcode VARCHAR(20) NOT NULL,
-                country VARCHAR(100) NOT NULL,
-                is_default BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`,
-
-            // Roles table (SERIAL ID)
-            `CREATE TABLE IF NOT EXISTS roles (
-                role_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name VARCHAR(50) UNIQUE NOT NULL,
-                description TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`,
-
-            // User_roles table (junction)
-            `CREATE TABLE IF NOT EXISTS user_roles (
-                user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
-                role_id INTEGER REFERENCES roles(role_id) ON DELETE CASCADE,
-                PRIMARY KEY (user_id, role_id)
-            )`
-        ];
-
-        let index = 0;
-
-        function runNext() {
-            if (index >= createQueries.length) {
-                console.log('✅ All tables created');
-                resolve();
-                return;
-            }
-
-            const tableName = createQueries[index].split('TABLE')[1].split('(')[0].trim().replace('IF NOT EXISTS', '').trim();
-            console.log(`Creating table: ${tableName}...`);
-
-            database.database.run(createQueries[index], [], (err) => {
-                if (err) {
-                    console.error(`Error creating table: ${err.message}`);
-                    reject(err);
-                    return;
-                }
-                console.log(`✅ Created table: ${tableName}`);
-                index++;
-                runNext();
-            });
-        }
-
-        runNext();
-    });
-}
-
-function createIndexes() {
-    return new Promise((resolve, reject) => {
-        console.log('📊 Creating indexes...');
-
-        const indexQueries = [
-            'CREATE INDEX IF NOT EXISTS idx_product_store ON product(store_id)',
-            'CREATE INDEX IF NOT EXISTS idx_product_category ON product(category_id)',
-            'CREATE INDEX IF NOT EXISTS idx_order_client ON "order"(client_id)',
-            'CREATE INDEX IF NOT EXISTS idx_order_store ON "order"(store_id)',
-            'CREATE INDEX IF NOT EXISTS idx_order_date ON "order"(order_date)',
-            'CREATE INDEX IF NOT EXISTS idx_review_client ON review(client_id)',
-            'CREATE INDEX IF NOT EXISTS idx_review_product ON review(product_code)',
-            'CREATE INDEX IF NOT EXISTS idx_request_client ON request(client_id)',
-            'CREATE INDEX IF NOT EXISTS idx_request_store ON request(store_id)',
-            'CREATE INDEX IF NOT EXISTS idx_refund_order ON refund(order_num)',
-            'CREATE INDEX IF NOT EXISTS idx_refund_status ON refund(status)',
-            'CREATE INDEX IF NOT EXISTS idx_personal_email ON personal(email)',
-            'CREATE INDEX IF NOT EXISTS idx_client_email ON client(email)',
-            'CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)',
-            'CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)',
-            'CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id)',
-            'CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action)',
-            'CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at)',
-            'CREATE INDEX IF NOT EXISTS idx_delivery_client ON delivery_address(client_id)',
-            'CREATE INDEX IF NOT EXISTS idx_works_in_store_personal ON works_in_store(personal_id)',
-            'CREATE INDEX IF NOT EXISTS idx_works_in_store_store ON works_in_store(store_id)'
-        ];
-
-        let index = 0;
-
-        function runNext() {
-            if (index >= indexQueries.length) {
-                console.log('✅ Indexes created');
-                resolve();
-                return;
-            }
-
-            database.database.run(indexQueries[index], [], (err) => {
-                if (err) {
-                    console.log(`⚠️ Index creation warning for ${indexQueries[index].substring(0, 50)}...: ${err.message}`);
-                }
-                index++;
-                runNext();
-            });
-        }
-
-        runNext();
-    });
-}
-
-function insertInitialData() {
-    return new Promise((resolve, reject) => {
-        console.log('📝 Inserting initial data...');
-
-        // Insert default roles
+        `;
+        await pool.query(schema);
         const roles = [
-            { name: 'admin', description: 'System administrator' },
-            { name: 'store_owner', description: 'Store owner' },
-            { name: 'store_employee', description: 'Store employee' },
-            { name: 'client', description: 'Registered client' },
-            { name: 'guest', description: 'Unregistered guest' }
+            ['admin', 'System administrator'],
+            ['store_owner', 'Store owner'],
+            ['store_employee', 'Store employee'],
+            ['client', 'Registered client'],
+            ['guest', 'Unregistered guest']
         ];
-
-        let rolesInserted = 0;
-
-        roles.forEach(role => {
-            database.database.run(
-                `INSERT INTO roles (name, description)
-                 VALUES (?, ?)
-                 ON CONFLICT DO NOTHING`,
-                [role.name, role.description],
-                (err) => {
-                    if (err) {
-                        console.error(`Error inserting role ${role.name}:`, err.message);
-                    }
-                    rolesInserted++;
-
-                    if (rolesInserted === roles.length) {
-                        console.log('✅ Roles inserted');
-                        // Create admin user with ID 000000
-                        createAdminUser();
-
-                        // Ensure General category exists
-                        database.ensureGeneralCategory((err) => {
-                            if (err) {
-                                console.error('Error ensuring General category:', err.message);
-                            } else {
-                                console.log('✅ General category checked/created');
-                            }
-                            resolve();
-                        });
-                    }
-                }
+        for (const [name, description] of roles) {
+            await pool.query(
+                'INSERT INTO roles(name, description) VALUES($1,$2) ON CONFLICT(name) DO NOTHING',
+                [name, description]
             );
-        });
-    });
-}
+        }
 
-// Function to create admin user with ID 000000
-function createAdminUser() {
-    const adminId = '000000';
-    const adminPassword = bcrypt.hashSync('Admin123!', 10);
+        const bcrypt = require('bcryptjs');
+        const hash = bcrypt.hashSync('Admin123!', 10);
+        await pool.query(
+            `INSERT INTO users(id, username, email, password, user_type, force_password_change)
+             VALUES('000000','admin','admin@handcraft.com',$1,'admin',TRUE)
+                 ON CONFLICT(id) DO NOTHING`,
+            [hash]
+        );
+        await pool.query(
+            `INSERT INTO personal(id, first_name, last_name, ssn, email, password)
+             VALUES('000000','Admin','User','0000000000000','admin@handcraft.com',$1)
+                 ON CONFLICT(id) DO NOTHING`,
+            [hash]
+        );
+        await pool.query(
+            `INSERT INTO boss(boss_id) VALUES('000000') ON CONFLICT(boss_id) DO NOTHING`
+        );
+        await pool.query(
+            `INSERT INTO permissions(personal_is,type,authorisation)
+             VALUES('000000','ADMIN','full_access')
+                 ON CONFLICT(personal_is) DO NOTHING`
+        );
+        await pool.query(
+            `INSERT INTO user_roles(user_id,role_id)
+             SELECT '000000', role_id FROM roles WHERE name='admin'
+                 ON CONFLICT DO NOTHING`
+        );
+        await pool.query(
+            `INSERT INTO category(name,parent_category_id)
+             SELECT 'General', NULL
+                 WHERE NOT EXISTS (SELECT 1 FROM category WHERE name='General')`
+        );
+        console.log('✅ PostgreSQL schema is ready');
+    },
 
-    database.database.get(
-        'SELECT * FROM users WHERE id = ? OR username = ? OR email = ?',
-        [adminId, 'admin', 'admin@handcraft.com'],
-        (err, existingAdmin) => {
-            if (err) {
-                console.error('Error checking for existing admin:', err.message);
-                return;
+    close() {
+        return pool.end();
+    },
+
+    getUserById(id, callback) {
+        dbQuery(
+            `SELECT u.*,
+                    COALESCE(json_agg(json_build_object('name',r.name,'description',r.description))
+                             FILTER (WHERE r.role_id IS NOT NULL), '[]') AS roles
+             FROM users u
+                      LEFT JOIN user_roles ur ON ur.user_id=u.id
+                      LEFT JOIN roles r ON r.role_id=ur.role_id
+             WHERE u.id=$1
+             GROUP BY u.id`,
+            [String(id)],
+            (err, result) => callback(err, result?.rows?.[0])
+        );
+    },
+
+    getUserByUsername(username, callback) {
+        dbQuery(
+            `SELECT u.*,
+                    COALESCE(json_agg(json_build_object('name',r.name,'description',r.description))
+                             FILTER (WHERE r.role_id IS NOT NULL), '[]') AS roles
+             FROM users u
+                      LEFT JOIN user_roles ur ON ur.user_id=u.id
+                      LEFT JOIN roles r ON r.role_id=ur.role_id
+             WHERE u.username=$1 OR u.email=$1
+             GROUP BY u.id
+                 LIMIT 1`,
+            [username],
+            (err, result) => callback(err, result?.rows?.[0])
+        );
+    },
+
+    createUser(id, username, email, password, userType, callback) {
+        dbQuery(
+            `INSERT INTO users(id,username,email,password,user_type,force_password_change)
+             VALUES($1,$2,$3,$4,$5,FALSE) RETURNING id`,
+            [String(id), username, email, password, userType],
+            (err, result) => {
+                if (err) return callback(err);
+                const roleName = userType === 'client' ? 'client' :
+                    userType === 'store_owner' ? 'store_owner' :
+                        userType === 'store_employee' ? 'store_employee' : 'guest';
+                dbQuery(
+                    `INSERT INTO user_roles(user_id,role_id)
+                     SELECT $1, role_id FROM roles WHERE name=$2
+                         ON CONFLICT DO NOTHING`,
+                    [String(id), roleName],
+                    roleErr => callback(roleErr, String(id))
+                );
             }
+        );
+    },
 
-            if (!existingAdmin) {
-                // Start a transaction
-                database.database.run('BEGIN TRANSACTION', (err) => {
-                    if (err) {
-                        console.error('Error beginning transaction:', err);
-                        return;
-                    }
+    createClient(data, callback) {
+        dbQuery(
+            `INSERT INTO client(first_name,last_name,email,password)
+             VALUES($1,$2,$3,$4) RETURNING client_id`,
+            [data.firstName || data.first_name, data.lastName || data.last_name, data.email, data.password],
+            (err, result) => callback(err, result?.rows?.[0]?.client_id)
+        );
+    },
 
-                    // Insert into users table
-                    database.database.run(
-                        `INSERT INTO users (id, username, email, password, user_type, force_password_change)
-                         VALUES (?, ?, ?, ?, ?, ?)`,
-                        [adminId, 'admin', 'admin@handcraft.com', adminPassword, 'admin', 1],
-                        function(err) {
-                            if (err) {
-                                database.database.run('ROLLBACK');
-                                console.error('Error inserting admin user:', err.message);
-                                return;
+    getClientByEmail(email, callback) {
+        dbQuery('SELECT * FROM client WHERE email=$1', [email],
+            (err, result) => callback(err, result?.rows?.[0]));
+    },
+
+    getClientById(id, callback) {
+        dbQuery('SELECT * FROM client WHERE client_id=$1', [id],
+            (err, result) => callback(err, result?.rows?.[0]));
+    },
+
+    getPersonalByEmail(email, callback) {
+        dbQuery('SELECT * FROM personal WHERE email=$1', [email],
+            (err, result) => callback(err, result?.rows?.[0]));
+    },
+
+    getPersonalById(id, callback) {
+        dbQuery('SELECT * FROM personal WHERE id=$1', [String(id)],
+            (err, result) => callback(err, result?.rows?.[0]));
+    },
+
+    verifyPassword(password, hash) {
+        const bcrypt = require('bcryptjs');
+        try { return bcrypt.compareSync(password, hash); } catch { return false; }
+    },
+
+    verifyClientPassword(password, hash, callback) {
+        require('bcryptjs').compare(password, hash, callback);
+    },
+
+    logAudit(userId, action, resourceType, resourceId, details, ipAddress) {
+        dbQuery(
+            `INSERT INTO audit_log(user_id,action,resource_type,resource_id,details,ip_address)
+             VALUES($1,$2,$3,$4,$5,$6)`,
+            [userId == null ? null : String(userId), action, resourceType, resourceId == null ? null : String(resourceId), details, ipAddress],
+            () => {}
+        );
+    },
+
+    ensureGeneralCategory(callback) {
+        dbQuery(
+            `INSERT INTO category(name,parent_category_id)
+             SELECT 'General',NULL
+                 WHERE NOT EXISTS(SELECT 1 FROM category WHERE name='General')`,
+            [],
+            err => callback(err)
+        );
+    },
+
+    getProducts(categoryId, searchTerm, callback) {
+        const params = [];
+        const where = [];
+        if (categoryId) { params.push(categoryId); where.push(`p.category_id=$${params.length}`); }
+        if (searchTerm) {
+            params.push(`%${searchTerm}%`);
+            where.push(`(p.description ILIKE $${params.length} OR p.code ILIKE $${params.length})`);
+        }
+        const sql = `SELECT p.*, c.name AS category_name, p.store_id
+                     FROM product p LEFT JOIN category c ON c.id=p.category_id
+                         ${where.length ? 'WHERE '+where.join(' AND ') : ''}
+                     ORDER BY p.code`;
+        dbQuery(sql, params, (err, result) => callback(err, result?.rows || []));
+    },
+
+    getProductById(id, callback) {
+        dbQuery(
+            `SELECT p.*,c.name AS category_name FROM product p
+                                                         LEFT JOIN category c ON c.id=p.category_id WHERE p.code=$1 OR p.code::text=$1 LIMIT 1`,
+            [String(id)],
+            (err,result)=>callback(err,result?.rows?.[0])
+        );
+    },
+
+    getProductByCode(code, callback) {
+        dbQuery(
+            `SELECT p.*,c.name AS category_name FROM product p
+                                                         LEFT JOIN category c ON c.id=p.category_id WHERE p.code=$1`,
+            [code],
+            (err,result)=>callback(err,result?.rows?.[0])
+        );
+    },
+
+    addProduct(personalId, data, callback) {
+        const storeId = data.store_id || data.storeId || String(data.code).slice(0,3);
+        dbQuery(
+            `INSERT INTO product(code,price,availability,weight,width_x_length_x_depth,
+                                 aprox_production_time,description,category_id,store_id)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING code`,
+            [
+                data.code, data.price, data.availability ?? 0, data.weight,
+                data.width_x_length_x_depth || data.dimensions || '',
+                data.aprox_production_time || data.production_time || 0,
+                data.description, data.category_id, storeId
+            ],
+            (err,result)=>{
+                if (err) return callback(err);
+                dbQuery(
+                    `INSERT INTO sells(product_code,store_id,discount)
+                     VALUES($1,$2,$3) ON CONFLICT(product_code,store_id) DO UPDATE SET discount=EXCLUDED.discount`,
+                    [data.code,storeId,data.discount || 0],
+                    e => callback(e, data.code)
+                );
+            }
+        );
+    },
+
+    updateProduct(personalId, data, callback) {
+        const fields = [];
+        const params = [];
+        const allowed = [
+            ['price','price'],['availability','availability'],['weight','weight'],
+            ['width_x_length_x_depth','width_x_length_x_depth'],
+            ['dimensions','width_x_length_x_depth'],
+            ['aprox_production_time','aprox_production_time'],
+            ['production_time','aprox_production_time'],
+            ['description','description'],['category_id','category_id']
+        ];
+        for (const [input,col] of allowed) {
+            if (data[input] !== undefined) {
+                params.push(data[input]);
+                fields.push(`${col}=$${params.length}`);
+            }
+        }
+        if (!fields.length) return callback(null,0);
+        params.push(data.code);
+        dbQuery(`UPDATE product SET ${fields.join(', ')} WHERE code=$${params.length}`, params,
+            (err,result)=>callback(err,result?.rowCount || 0));
+    },
+
+    deleteProduct(productCode, storeId, personalId, callback) {
+        dbQuery('DELETE FROM product WHERE code=$1 AND store_id=$2', [productCode,storeId],
+            (err)=>callback(err));
+    },
+
+    createCategory(data, callback) {
+        dbQuery(
+            `INSERT INTO category(name,parent_category_id) VALUES($1,$2) RETURNING id,name,parent_category_id`,
+            [data.name, data.parent_category_id || null],
+            (err,result)=>callback(err,result?.rows?.[0])
+        );
+    },
+
+    getCategories(callback) {
+        dbQuery('SELECT * FROM category ORDER BY name', [], (err,result)=>callback(err,result?.rows||[]));
+    },
+
+    getCategoriesWithParents(callback) {
+        dbQuery(
+            `SELECT c.*,p.name AS parent_name
+             FROM category c LEFT JOIN category p ON p.id=c.parent_category_id
+             ORDER BY c.name`,
+            [], (err,result)=>callback(err,result?.rows||[])
+        );
+    },
+
+    getStores(callback) {
+        dbQuery('SELECT * FROM store ORDER BY name', [], (err,result)=>callback(err,result?.rows||[]));
+    },
+
+    createOrderNew(data, callback) {
+        const items = data.items || data.products || data.order_items || [];
+        const storeId = data.store_id || data.storeId || (items[0]?.code ? String(items[0].code).slice(0,3) : null);
+        const now = new Date();
+        const year = String(now.getFullYear()).slice(-3);
+        const prefix = storeId || '000';
+        const insertOrder = () => {
+            dbQuery(
+                `SELECT COUNT(*)::int AS n FROM "order" WHERE store_id=$1 AND EXTRACT(YEAR FROM order_date)=EXTRACT(YEAR FROM CURRENT_DATE)`,
+                [storeId],
+                (countErr,countResult)=>{
+                    if (countErr) return callback(countErr);
+                    const seq=Number(countResult.rows[0].n)+1;
+                    const orderNum=`${prefix}${year}${String(seq).padStart(5,'0')}`;
+                    dbQuery(
+                        `INSERT INTO "order"(order_num,client_id,status,last_date_mod,payment_method,discount,store_id,order_date,quantity,delivery_address)
+                         VALUES($1,$2,$3,CURRENT_TIMESTAMP,$4,$5,$6,CURRENT_TIMESTAMP,$7,$8) RETURNING order_num`,
+                        [orderNum,data.client_id,data.status||'placed order',data.payment_method,data.discount||0,storeId,
+                            items.reduce((n,x)=>n+Number(x.quantity||1),0),data.delivery_address||data.deliveryAddress||null],
+                        (err,result)=>{
+                            if(err) return callback(err);
+                            let pending=items.length;
+                            if(!pending) return callback(null,orderNum);
+                            let firstErr=null;
+                            for(const item of items){
+                                dbQuery(
+                                    `INSERT INTO includes(order_num,product_code,quantity) VALUES($1,$2,$3)`,
+                                    [orderNum,item.product_code||item.code,item.quantity||1],
+                                    e=>{ if(e) firstErr ||= e; if(--pending===0) callback(firstErr,firstErr?undefined:orderNum); }
+                                );
                             }
-
-                            // Insert into personal table (required for boss table)
-                            database.database.run(
-                                `INSERT INTO personal (id, first_name, last_name, ssn, email, password)
-                                 VALUES (?, ?, ?, ?, ?, ?)`,
-                                [adminId, 'Admin', 'User', '0000000000000', 'admin@handcraft.com', adminPassword],
-                                function(err) {
-                                    if (err) {
-                                        database.database.run('ROLLBACK');
-                                        console.error('Error inserting admin personal:', err.message);
-                                        return;
-                                    }
-
-                                    // Insert into boss table (store owner)
-                                    database.database.run(
-                                        `INSERT INTO boss (boss_id, signature)
-                                         VALUES (?, ?)`,
-                                        [adminId, 'Admin Signature'],
-                                        function(err) {
-                                            if (err) {
-                                                database.database.run('ROLLBACK');
-                                                console.error('Error inserting admin boss:', err.message);
-                                                return;
-                                            }
-
-                                            // Insert into permissions
-                                            database.database.run(
-                                                `INSERT INTO permissions (personal_id, type, authorisation)
-                                                 VALUES (?, ?, ?)`,
-                                                [adminId, 'ADMIN', 'full_access'],
-                                                function(err) {
-                                                    if (err) {
-                                                        console.error('Error inserting admin permissions:', err.message);
-                                                        // Continue even if this fails
-                                                    }
-
-                                                    // Assign admin role
-                                                    database.database.get(
-                                                        'SELECT role_id FROM roles WHERE name = ?',
-                                                        ['admin'],
-                                                        (err, adminRole) => {
-                                                            if (!err && adminRole) {
-                                                                database.database.run(
-                                                                    'INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)',
-                                                                    [adminId, adminRole.role_id],
-                                                                    (err) => {
-                                                                        if (err) {
-                                                                            console.error('Error assigning admin role:', err.message);
-                                                                        }
-                                                                    }
-                                                                );
-                                                            }
-
-                                                            database.database.run('COMMIT', (commitErr) => {
-                                                                if (commitErr) {
-                                                                    console.error('Error committing transaction:', commitErr);
-                                                                    database.database.run('ROLLBACK');
-                                                                } else {
-                                                                    console.log('\n');
-                                                                    console.log('🔐 ===== ADMIN CREDENTIALS =====');
-                                                                    console.log('🆔 ID: 000000');
-                                                                    console.log('👤 Username: admin');
-                                                                    console.log('📧 Email: admin@handcraft.com');
-                                                                    console.log('🔑 Password: Admin123!');
-                                                                    console.log('⚠️ This is a first-time login. You will be required to change your password after 2FA verification.');
-                                                                    console.log('================================\n');
-                                                                }
-                                                            });
-                                                        }
-                                                    );
-                                                }
-                                            );
-                                        }
-                                    );
-                                }
-                            );
                         }
                     );
-                });
-            } else {
-                console.log('✅ Admin user already exists with ID:', existingAdmin.id);
-            }
-        }
-    );
-}
+                }
+            );
+        };
+        insertOrder();
+    },
 
-// Initialize database on startup
-(async function() {
+    getOrdersByClient(clientId, callback) {
+        dbQuery(
+            `SELECT o.*,COALESCE(json_agg(json_build_object('product_code',i.product_code,'quantity',i.quantity,'price',p.price))
+                                 FILTER(WHERE i.product_code IS NOT NULL),'[]') AS items
+             FROM "order" o
+                      LEFT JOIN includes i ON i.order_num=o.order_num
+                      LEFT JOIN product p ON p.code=i.product_code
+             WHERE o.client_id=$1 GROUP BY o.order_num ORDER BY o.order_date DESC`,
+            [clientId],(err,result)=>callback(err,result?.rows||[])
+        );
+    },
+
+    createReviewNew(data, callback) {
+        const reviewId = data.review_id || ('REV'+Date.now());
+        dbQuery(
+            `INSERT INTO review(order_num,comment,rating,last_mod_date,review_id,client_id,product_code,review_date)
+             VALUES($1,$2,$3,CURRENT_TIMESTAMP,$4,$5,$6,CURRENT_TIMESTAMP)
+                 RETURNING review_id`,
+            [data.order_num,data.comment||null,data.rating,reviewId,data.client_id||null,data.product_code||null],
+            (err,result)=>callback(err,result?.rows?.[0]?.review_id || reviewId)
+        );
+    },
+
+    createRequest(data, callback) {
+        dbQuery(
+            `INSERT INTO request(request_num,date_and_time,problem,notes_of_communication,customer_satisfaction,client_id,store_id)
+             VALUES($1,$2,$3,$4,0,$5,$6) RETURNING request_num`,
+            [data.request_num,data.date_and_time,data.problem,data.notes_of_communication||null,data.client_id,data.store_id],
+            (err,result)=>callback(err,result?.rows?.[0]?.request_num)
+        );
+    },
+
+    createRefund(data, callback) {
+        dbQuery(
+            `INSERT INTO refund(refund_id,order_num,reason,amount,status,request_date)
+             VALUES($1,$2,$3,$4,$5,CURRENT_TIMESTAMP) RETURNING refund_id`,
+            [String(data.refund_id),data.order_num,data.reason||null,data.amount,data.status||'requested refund'],
+            (err,result)=>callback(err,result?.rows?.[0]?.refund_id)
+        );
+    },
+
+    getAllUsers(callback) {
+        dbQuery(`SELECT u.*,COALESCE(json_agg(r.name) FILTER(WHERE r.role_id IS NOT NULL),'[]') roles
+                 FROM users u LEFT JOIN user_roles ur ON ur.user_id=u.id
+                              LEFT JOIN roles r ON r.role_id=ur.role_id GROUP BY u.id ORDER BY u.created_at DESC`,
+            [],(err,result)=>callback(err,result?.rows||[]));
+    },
+
+    getAllOrders(callback) {
+        dbQuery(`SELECT o.*,c.first_name,c.last_name,c.email FROM "order" o
+                                                                      LEFT JOIN client c ON c.client_id=o.client_id ORDER BY o.order_date DESC`,
+            [],(err,result)=>callback(err,result?.rows||[]));
+    },
+
+    getStoreProducts(storeId, callback) {
+        dbQuery(`SELECT p.*,c.name AS category_name,s.discount FROM product p
+                                                                        LEFT JOIN category c ON c.id=p.category_id
+                                                                        LEFT JOIN sells s ON s.product_code=p.code AND s.store_id=$1
+                 WHERE p.store_id=$1 OR EXISTS(SELECT 1 FROM sells sx WHERE sx.product_code=p.code AND sx.store_id=$1)
+                 ORDER BY p.code`,[storeId],(err,result)=>callback(err,result?.rows||[]));
+    },
+
+    getStoreOrders(storeId, callback) {
+        dbQuery(`SELECT o.*,c.first_name,c.last_name FROM "order" o
+                                                              LEFT JOIN client c ON c.client_id=o.client_id
+                 WHERE o.store_id=$1 ORDER BY o.order_date DESC`,[storeId],
+            (err,result)=>callback(err,result?.rows||[]));
+    },
+
+    getStoreEmployees(storeId, callback) {
+        dbQuery(`SELECT p.*,e.date_of_hire,per.type,per.authorisation
+                 FROM personal p JOIN works_in_store w ON w.personal_id=p.id
+                                 LEFT JOIN employees e ON e.employee_id=p.id
+                                 LEFT JOIN permissions per ON per.personal_is=p.id
+                 WHERE w.store_id=$1 ORDER BY p.last_name,p.first_name`,
+            [storeId],(err,result)=>callback(err,result?.rows||[]));
+    },
+
+    getStoreReports(storeId, callback) {
+        dbQuery(`SELECT * FROM report WHERE store_id=$1 ORDER BY date DESC`,[storeId],
+            (err,result)=>callback(err,result?.rows||[]));
+    },
+
+    getStoreStats(storeId, callback) {
+        const sql=`SELECT
+                           (SELECT COUNT(*) FROM product WHERE store_id=$1)::int AS product_count,
+                           (SELECT COUNT(*) FROM "order" WHERE store_id=$1)::int AS order_count,
+                           (SELECT COALESCE(SUM(i.quantity*p.price*(1-o.discount/100)),0)
+                            FROM "order" o JOIN includes i ON i.order_num=o.order_num JOIN product p ON p.code=i.product_code
+                            WHERE o.store_id=$1) AS revenue,
+                           (SELECT COUNT(*) FROM works_in_store WHERE store_id=$1)::int AS employee_count,
+                           (SELECT COUNT(*) FROM request WHERE store_id=$1)::int AS request_count,
+                           (SELECT COUNT(*) FROM refund r JOIN "order" o ON o.order_num=r.order_num WHERE o.store_id=$1)::int AS refund_count`;
+        dbQuery(sql,[storeId],(err,result)=>callback(err,result?.rows?.[0]||{}));
+    },
+
+    getEmployeeTasks(personalId, storeId, callback) {
+        dbQuery(`SELECT r.*,a.personal_id AS answered_by
+                 FROM request r
+                          LEFT JOIN answers a ON a.request_num=r.request_num
+                 WHERE r.store_id=$1 AND (a.personal_id=$2 OR a.personal_id IS NULL)
+                 ORDER BY r.date_and_time DESC`,
+            [storeId,personalId],(err,result)=>callback(err,result?.rows||[]));
+    },
+
+    getClientStats(clientId, callback) {
+        dbQuery(`SELECT
+                         (SELECT COUNT(*) FROM "order" WHERE client_id=$1)::int AS order_count,
+                         (SELECT COUNT(*) FROM review WHERE client_id=$1)::int AS review_count,
+                         (SELECT COUNT(*) FROM request WHERE client_id=$1)::int AS request_count,
+                         (SELECT COUNT(*) FROM refund r JOIN "order" o ON o.order_num=r.order_num WHERE o.client_id=$1)::int AS refund_count`,
+            [clientId],(err,result)=>callback(err,result?.rows?.[0]||{}));
+    }
+};
+
+
+
+
+// PostgreSQL schema initialization.
+// The schema is based on the supplied Pasted markdown.md. A few invalid PostgreSQL
+// declarations in the original paste are corrected here (for example DECIMMAL,
+// PARTIAL KEY, and composite-key column-name typos). The existing HTTP layer also
+// needs the small application-support tables and compatibility columns defined below.
+(async () => {
     try {
-        await initializeDatabase();
+        await database.initializeDatabase();
         console.log('✅ Database initialization completed');
     } catch (err) {
         console.error('❌ Database initialization failed:', err);
+        process.exitCode = 1;
     }
 })();
 
@@ -1153,7 +1183,7 @@ const server = http.createServer((req, res) => {
         const cookies = parseCookies(req);
         const sessionId = cookies.sessionId;
 
-        if (!sessionId || (!sessions.has(sessionId) && !tempAdminSessions.has(sessionId))) {
+        if (!sessionId || !sessions.has(sessionId)) {
             res.writeHead(302, { 'Location': '/login.html' });
             res.end();
             return;
@@ -1175,14 +1205,8 @@ const server = http.createServer((req, res) => {
         const cookies = parseCookies(req);
         const sessionId = cookies.sessionId;
 
-        if (!sessionId || (!sessions.has(sessionId) && !tempAdminSessions.has(sessionId))) {
+        if (!sessionId || !sessions.has(sessionId)) {
             res.writeHead(302, { 'Location': '/login.html' });
-            res.end();
-            return;
-        }
-
-        if (tempAdminSessions.has(sessionId)) {
-            res.writeHead(302, { 'Location': '/change-password.html?forced=true' });
             res.end();
             return;
         }
@@ -1200,7 +1224,7 @@ const server = http.createServer((req, res) => {
                 const personalId = userId.replace('personal_', '');
 
                 database.database.get(
-                    'SELECT boss_id FROM boss WHERE boss_id = ?',
+                    'SELECT boss_id FROM boss WHERE boss_id = $1',
                     [personalId],
                     (err, boss) => {
                         if (boss) {
@@ -1221,179 +1245,11 @@ const server = http.createServer((req, res) => {
 
         serveStaticFile(res, 'admin.html', 'text/html');
     } else if (pathname === '/store-owner.html') {
-        // Check if user is authenticated
-        const cookies = parseCookies(req);
-        const sessionId = cookies.sessionId;
-
-        console.log(`📄 Accessing store-owner.html - Session ID: ${sessionId || 'none'}`);
-
-        if (!sessionId || (!sessions.has(sessionId) && !tempAdminSessions.has(sessionId))) {
-            console.log(`❌ store-owner.html - No valid session, redirecting to login`);
-            res.writeHead(302, { 'Location': '/login.html' });
-            res.end();
-            return;
-        }
-
-        if (tempAdminSessions.has(sessionId)) {
-            console.log(`⚠️ store-owner.html - Temporary session, redirecting to change password`);
-            res.writeHead(302, { 'Location': '/change-password.html?forced=true' });
-            res.end();
-            return;
-        }
-
-        // Get user from session
-        const userId = sessions.get(sessionId);
-        console.log(`📄 store-owner.html - User ID from session: ${userId}`);
-
-        // Check if this is a store owner
-        if (userId.startsWith('personal_')) {
-            const personalId = userId.replace('personal_', '');
-
-            database.database.get(
-                'SELECT boss_id FROM boss WHERE boss_id = ?',
-                [personalId],
-                (err, boss) => {
-                    if (boss) {
-                        // Is a store owner, serve the page
-                        console.log(`✅ store-owner.html - User is a store owner, serving page`);
-                        serveStaticFile(res, 'store-owner.html', 'text/html');
-                    } else {
-                        // Not a store owner, redirect to appropriate page
-                        console.log(`❌ store-owner.html - User is not a store owner, redirecting`);
-                        res.writeHead(302, { 'Location': '/dashboard.html' });
-                        res.end();
-                    }
-                }
-            );
-        } else if (userId === '000000') {
-            // Admin trying to access store owner page
-            console.log(`❌ store-owner.html - Admin trying to access, redirecting to admin`);
-            res.writeHead(302, { 'Location': '/admin.html' });
-            res.end();
-        } else if (userId.startsWith('client_')) {
-            // Client trying to access store owner page
-            console.log(`❌ store-owner.html - Client trying to access, redirecting to client`);
-            res.writeHead(302, { 'Location': '/client-dashboard.html' });
-            res.end();
-        } else {
-            res.writeHead(302, { 'Location': '/dashboard.html' });
-            res.end();
-        }
+        serveStaticFile(res, 'store-owner.html', 'text/html');
     } else if (pathname === '/store-employee.html') {
-        // Check if user is authenticated
-        const cookies = parseCookies(req);
-        const sessionId = cookies.sessionId;
-
-        console.log(`📄 Accessing store-employee.html - Session ID: ${sessionId || 'none'}`);
-
-        if (!sessionId || (!sessions.has(sessionId) && !tempAdminSessions.has(sessionId))) {
-            console.log(`❌ store-employee.html - No valid session, redirecting to login`);
-            res.writeHead(302, { 'Location': '/login.html' });
-            res.end();
-            return;
-        }
-
-        if (tempAdminSessions.has(sessionId)) {
-            console.log(`⚠️ store-employee.html - Temporary session, redirecting to change password`);
-            res.writeHead(302, { 'Location': '/change-password.html?forced=true' });
-            res.end();
-            return;
-        }
-
-        // Get user from session
-        const userId = sessions.get(sessionId);
-        console.log(`📄 store-employee.html - User ID from session: ${userId}`);
-
-        // Check if this is a store employee
-        if (userId.startsWith('personal_')) {
-            const personalId = userId.replace('personal_', '');
-
-            database.database.get(
-                'SELECT employee_id FROM employees WHERE employee_id = ?',
-                [personalId],
-                (err, employee) => {
-                    if (employee) {
-                        // Is a store employee, serve the page
-                        console.log(`✅ store-employee.html - User is a store employee, serving page`);
-                        serveStaticFile(res, 'store-employee.html', 'text/html');
-                    } else {
-                        // Check if they're a store owner (they can also access employee page)
-                        database.database.get(
-                            'SELECT boss_id FROM boss WHERE boss_id = ?',
-                            [personalId],
-                            (err, boss) => {
-                                if (boss) {
-                                    console.log(`✅ store-employee.html - User is a store owner (can access), serving page`);
-                                    serveStaticFile(res, 'store-employee.html', 'text/html');
-                                } else {
-                                    // Not authorized
-                                    console.log(`❌ store-employee.html - User is not authorized, redirecting`);
-                                    res.writeHead(302, { 'Location': '/dashboard.html' });
-                                    res.end();
-                                }
-                            }
-                        );
-                    }
-                }
-            );
-        } else if (userId === '000000') {
-            // Admin trying to access employee page
-            console.log(`❌ store-employee.html - Admin trying to access, redirecting to admin`);
-            res.writeHead(302, { 'Location': '/admin.html' });
-            res.end();
-        } else if (userId.startsWith('client_')) {
-            // Client trying to access employee page
-            console.log(`❌ store-employee.html - Client trying to access, redirecting to client`);
-            res.writeHead(302, { 'Location': '/client-dashboard.html' });
-            res.end();
-        } else {
-            res.writeHead(302, { 'Location': '/dashboard.html' });
-            res.end();
-        }
+        serveStaticFile(res, 'store-employee.html', 'text/html');
     } else if (pathname === '/client-dashboard.html') {
-        // Check if user is authenticated
-        const cookies = parseCookies(req);
-        const sessionId = cookies.sessionId;
-
-        console.log(`📄 Accessing client-dashboard.html - Session ID: ${sessionId || 'none'}`);
-
-        if (!sessionId || (!sessions.has(sessionId) && !tempAdminSessions.has(sessionId))) {
-            console.log(`❌ client-dashboard.html - No valid session, redirecting to login`);
-            res.writeHead(302, { 'Location': '/login.html' });
-            res.end();
-            return;
-        }
-
-        if (tempAdminSessions.has(sessionId)) {
-            console.log(`⚠️ client-dashboard.html - Temporary session, redirecting to change password`);
-            res.writeHead(302, { 'Location': '/change-password.html?forced=true' });
-            res.end();
-            return;
-        }
-
-        // Get user from session
-        const userId = sessions.get(sessionId);
-        console.log(`📄 client-dashboard.html - User ID from session: ${userId}`);
-
-        // Check if this is a client
-        if (userId.startsWith('client_')) {
-            // Is a client, serve the page
-            console.log(`✅ client-dashboard.html - User is a client, serving page`);
-            serveStaticFile(res, 'client-dashboard.html', 'text/html');
-        } else if (userId === '000000') {
-            // Admin trying to access client page
-            console.log(`❌ client-dashboard.html - Admin trying to access, redirecting to admin`);
-            res.writeHead(302, { 'Location': '/admin.html' });
-            res.end();
-        } else if (userId.startsWith('personal_')) {
-            // Personal user trying to access client page
-            console.log(`❌ client-dashboard.html - Personal user trying to access, redirecting to store`);
-            res.writeHead(302, { 'Location': '/store-owner.html' });
-            res.end();
-        } else {
-            res.writeHead(302, { 'Location': '/dashboard.html' });
-            res.end();
-        }
+        serveStaticFile(res, 'client-dashboard.html', 'text/html');
     } else if (pathname === '/products.html') {
         serveStaticFile(res, 'products.html', 'text/html');
     } else if (pathname === '/product-detail.html') {
@@ -1590,7 +1446,7 @@ const server = http.createServer((req, res) => {
                 }
 
                 database.database.get(
-                    'SELECT store_id FROM store WHERE store_email = ?',
+                    'SELECT store_id FROM store WHERE store_email = $1',
                     [formData.storeEmail],
                     (err, existingStore) => {
                         if (err) {
@@ -1970,7 +1826,7 @@ const server = http.createServer((req, res) => {
 
                     // Insert into store table (store_id is VARCHAR)
                     database.database.run(
-                        'INSERT INTO store (store_id, name, date_of_founding, physical_address, store_email, rating) VALUES (?, ?, ?, ?, ?, ?)',
+                        'INSERT INTO store (store_id, name, date_of_founding, physical_address, store_email, rating) VALUES ($1, $2, $3, $4, $5, $6)',
                         [
                             tempStoreData.storeId,
                             tempStoreData.storeName,
@@ -1990,7 +1846,7 @@ const server = http.createServer((req, res) => {
 
                             // Insert into personal table (id is VARCHAR)
                             database.database.run(
-                                'INSERT INTO personal (id, first_name, last_name, ssn, email, password) VALUES (?, ?, ?, ?, ?, ?)',
+                                'INSERT INTO personal (id, first_name, last_name, ssn, email, password) VALUES ($1, $2, $3, $4, $5, $6)',
                                 [
                                     tempStoreData.personalId,
                                     tempStoreData.ownerFirstName,
@@ -2019,7 +1875,7 @@ const server = http.createServer((req, res) => {
 
                                     // Insert into boss table (boss_id is VARCHAR, references personal.id)
                                     database.database.run(
-                                        'INSERT INTO boss (boss_id, signature) VALUES (?, ?)',
+                                        'INSERT INTO boss (boss_id, signature) VALUES ($1, $2)',
                                         [tempStoreData.personalId, tempStoreData.signature],
                                         (err) => {
                                             if (err) {
@@ -2032,7 +1888,7 @@ const server = http.createServer((req, res) => {
 
                                             // Insert into works_in_store table (personal_id is VARCHAR, store_id is VARCHAR)
                                             database.database.run(
-                                                'INSERT INTO works_in_store (personal_id, store_id) VALUES (?, ?)',
+                                                'INSERT INTO works_in_store (personal_id, store_id) VALUES ($1, $2)',
                                                 [tempStoreData.personalId, tempStoreData.storeId],
                                                 (err) => {
                                                     if (err) {
@@ -2045,7 +1901,7 @@ const server = http.createServer((req, res) => {
 
                                                     // Insert into permissions table (personal_id is VARCHAR)
                                                     database.database.run(
-                                                        'INSERT INTO permissions (personal_id, type, authorisation) VALUES (?, ?, ?)',
+                                                        'INSERT INTO permissions (personal_id, type, authorisation) VALUES ($1, $2, $3)',
                                                         [tempStoreData.personalId, 'BOSS', 'full_access'],
                                                         (err) => {
                                                             if (err) {
@@ -2054,7 +1910,7 @@ const server = http.createServer((req, res) => {
 
                                                             // Also create entry in users table for login with force_password_change = 1
                                                             database.database.run(
-                                                                'INSERT INTO users (id, username, email, password, user_type, force_password_change) VALUES (?, ?, ?, ?, ?, ?)',
+                                                                'INSERT INTO users (id, username, email, password, user_type, force_password_change) VALUES ($1, $2, $3, $4, $5, $6)',
                                                                 [
                                                                     tempStoreData.personalId,
                                                                     `${tempStoreData.ownerFirstName} ${tempStoreData.ownerLastName}`,
@@ -2147,7 +2003,7 @@ const server = http.createServer((req, res) => {
                     } else {
                         if (tempUserData.address && tempUserData.city && tempUserData.postcode && tempUserData.country) {
                             database.database.run(
-                                'INSERT INTO delivery_address (client_id, address, city, postcode, country, is_default) VALUES (?, ?, ?, ?, ?, ?)',
+                                'INSERT INTO delivery_address (client_id, address, city, postcode, country, is_default) VALUES ($1, $2, $3, $4, $5, $6)',
                                 [
                                     clientId,
                                     tempUserData.address,
@@ -2321,7 +2177,7 @@ const server = http.createServer((req, res) => {
 
                         res.writeHead(200, {
                             'Content-Type': 'application/json',
-                            'Set-Cookie': `sessionId=${sessionId}; HttpOnly; Path=/; Max-Age=86400; SameSite=Strict`
+                            'Set-Cookie': `sessionId=${sessionId}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict`
                         });
 
                         res.end(JSON.stringify({
@@ -2368,7 +2224,7 @@ const server = http.createServer((req, res) => {
 
                             // Check if this is a boss (store owner)
                             database.database.get(
-                                'SELECT boss_id FROM boss WHERE boss_id = ?',
+                                'SELECT boss_id FROM boss WHERE boss_id = $1',
                                 [personal.id],
                                 (err, boss) => {
                                     if (err) {
@@ -2379,7 +2235,7 @@ const server = http.createServer((req, res) => {
                                         // This is a store owner
                                         // Check if first time login from users table
                                         database.database.get(
-                                            'SELECT force_password_change FROM users WHERE email = ?',
+                                            'SELECT force_password_change FROM users WHERE email = $1',
                                             [email],
                                             (err, user) => {
                                                 const isFirstTimeLogin = user && user.force_password_change === 1;
@@ -2429,7 +2285,7 @@ const server = http.createServer((req, res) => {
 
                                     // Check if this is an employee
                                     database.database.get(
-                                        'SELECT employee_id FROM employees WHERE employee_id = ?',
+                                        'SELECT employee_id FROM employees WHERE employee_id = $1',
                                         [personal.id],
                                         (err, employee) => {
                                             if (err) {
@@ -2439,7 +2295,7 @@ const server = http.createServer((req, res) => {
                                             if (employee) {
                                                 // This is an employee
                                                 database.database.get(
-                                                    'SELECT force_password_change FROM users WHERE email = ?',
+                                                    'SELECT force_password_change FROM users WHERE email = $1',
                                                     [email],
                                                     (err, user) => {
                                                         const isFirstTimeLogin = user && user.force_password_change === 1;
@@ -2490,7 +2346,7 @@ const server = http.createServer((req, res) => {
                                             // If we get here, it's a personal record without boss/employee status
                                             // Treat as regular user
                                             database.database.get(
-                                                'SELECT * FROM users WHERE email = ?',
+                                                'SELECT * FROM users WHERE email = $1',
                                                 [email],
                                                 (err, user) => {
                                                     if (err || !user) {
@@ -2632,7 +2488,7 @@ const server = http.createServer((req, res) => {
             }
 
             database.database.get(
-                'SELECT * FROM users WHERE email = ?',
+                'SELECT * FROM users WHERE email = $1',
                 [email],
                 (err, user) => {
                     if (err || !user) {
@@ -2715,7 +2571,6 @@ const server = http.createServer((req, res) => {
         });
     }
 
-    // ===== FIXED: /api/verify-2fa endpoint with proper redirect handling =====
     else if (pathname === '/api/verify-2fa' && req.method === 'POST') {
         let body = '';
         req.on('data', chunk => {
@@ -2755,10 +2610,8 @@ const server = http.createServer((req, res) => {
 
                 verificationCodes.delete(email);
 
-                // Determine redirect based on user type - all go to change-password.html with appropriate query parameters
+                // Determine redirect based on user type
                 let redirectTo = 'change-password.html?forced=true';
-
-                // Add redirect parameter to know where to go after password change
                 if (verificationData.userType === 'store_owner') {
                     redirectTo = 'change-password.html?forced=true&redirect=store-owner.html';
                 } else if (verificationData.userType === 'store_employee') {
@@ -2767,13 +2620,7 @@ const server = http.createServer((req, res) => {
                     redirectTo = 'change-password.html?forced=true&redirect=admin.html';
                 } else if (verificationData.userType === 'client') {
                     redirectTo = 'change-password.html?forced=true&redirect=client-dashboard.html';
-                } else {
-                    redirectTo = 'change-password.html?forced=true&redirect=dashboard.html';
                 }
-
-                console.log(`🔄 Password change required for ${verificationData.userType}. Redirecting to: ${redirectTo}`);
-                console.log(`🔄 Temp session created: ${tempSessionId} for user: ${verificationData.userId}`);
-                console.log(`🔐 TempAdminSessions now has ${tempAdminSessions.size} entries`);
 
                 res.writeHead(200, {
                     'Content-Type': 'application/json',
@@ -2828,12 +2675,11 @@ const server = http.createServer((req, res) => {
                     redirectTo = 'dashboard.html';
             }
 
-            console.log(`✅ ${verificationData.userType} login successful. Session: ${sessionId}, User: ${sessions.get(sessionId)}, Redirecting to: ${redirectTo}`);
-            console.log(`📊 Current sessions: ${Array.from(sessions.entries()).map(([id, user]) => `${id.substring(0,8)}...:${user}`).join(', ')}`);
+            console.log(`✅ ${verificationData.userType} login successful. Redirecting to: ${redirectTo}`);
 
             res.writeHead(200, {
                 'Content-Type': 'application/json',
-                'Set-Cookie': `sessionId=${sessionId}; HttpOnly; Path=/; Max-Age=86400; SameSite=Strict`
+                'Set-Cookie': `sessionId=${sessionId}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict`
             });
 
             res.end(JSON.stringify({
@@ -2850,7 +2696,7 @@ const server = http.createServer((req, res) => {
         const sessionId = cookies.sessionId;
 
         if (sessionId) {
-            const userId = sessions.get(sessionId) || tempAdminSessions.get(sessionId);
+            const userId = sessions.get(sessionId);
             if (userId) {
                 database.logAudit(userId, 'LOGOUT', 'auth', userId.toString(), 'User logged out', ipAddress);
             }
@@ -2871,7 +2717,6 @@ const server = http.createServer((req, res) => {
             const cookies = parseCookies(req);
             const sessionId = cookies.sessionId;
 
-            // Check if this is a temp session
             if (tempAdminSessions.has(sessionId)) {
                 // This is a temporary session (password change required)
                 // Get user info to determine type
@@ -2894,7 +2739,7 @@ const server = http.createServer((req, res) => {
                             } else {
                                 // Personal user (store owner/employee)
                                 database.database.get(
-                                    'SELECT boss_id FROM boss WHERE boss_id = ?',
+                                    'SELECT boss_id FROM boss WHERE boss_id = $1',
                                     [userId],
                                     (err, boss) => {
                                         let userType = 'store_employee';
@@ -2995,7 +2840,7 @@ const server = http.createServer((req, res) => {
                     }
 
                     database.database.get(
-                        'SELECT boss_id FROM boss WHERE boss_id = ?',
+                        'SELECT boss_id FROM boss WHERE boss_id = $1',
                         [personalId],
                         (err, boss) => {
                             if (err) {
@@ -3005,8 +2850,8 @@ const server = http.createServer((req, res) => {
                             if (boss) {
                                 database.database.all(
                                     `SELECT s.* FROM store s
-                                     JOIN works_in_store w ON s.store_id = w.store_id
-                                     WHERE w.personal_id = ?`,
+                                                         JOIN works_in_store w ON s.store_id = w.store_id
+                                     WHERE w.personal_id = $1`,
                                     [personalId],
                                     (err, stores) => {
                                         if (err) {
@@ -3030,7 +2875,7 @@ const server = http.createServer((req, res) => {
                                 );
                             } else {
                                 database.database.get(
-                                    'SELECT employee_id FROM employees WHERE employee_id = ?',
+                                    'SELECT employee_id FROM employees WHERE employee_id = $1',
                                     [personalId],
                                     (err, employee) => {
                                         if (err) {
@@ -3040,8 +2885,8 @@ const server = http.createServer((req, res) => {
                                         if (employee) {
                                             database.database.all(
                                                 `SELECT s.* FROM store s
-                                                 JOIN works_in_store w ON s.store_id = w.store_id
-                                                 WHERE w.personal_id = ?`,
+                                                                     JOIN works_in_store w ON s.store_id = w.store_id
+                                                 WHERE w.personal_id = $1`,
                                                 [personalId],
                                                 (err, stores) => {
                                                     if (err) {
@@ -3231,7 +3076,7 @@ const server = http.createServer((req, res) => {
                     const year = new Date().getFullYear().toString().slice(-3);
 
                     database.database.get(
-                        'SELECT COUNT(*) as order_count FROM "order" WHERE store_id = ? AND strftime("%Y", order_date) = ?',
+                        'SELECT COUNT(*) AS order_count FROM "order" WHERE store_id = $1 AND EXTRACT(YEAR FROM order_date)::INTEGER = $2::INTEGER',
                         [storeId, new Date().getFullYear().toString()],
                         (err, result) => {
                             if (err) {
@@ -3362,7 +3207,7 @@ const server = http.createServer((req, res) => {
                     const year = now.getFullYear().toString().slice(-3);
 
                     database.database.get(
-                        'SELECT COUNT(*) as request_count FROM request WHERE store_id = ? AND strftime("%Y", date_and_time) = ? AND strftime("%m", date_and_time) = ?',
+                        'SELECT COUNT(*)::int AS request_count FROM request WHERE store_id = $1 AND EXTRACT(YEAR FROM date_and_time)::int = $2::int AND EXTRACT(MONTH FROM date_and_time)::int = $3::int',
                         [storeId, now.getFullYear().toString(), (now.getMonth() + 1).toString().padStart(2, '0')],
                         (err, result) => {
                             if (err) {
@@ -3420,7 +3265,7 @@ const server = http.createServer((req, res) => {
                     const clientId = parseInt(userIdStr.replace('client_', ''));
 
                     database.database.get(
-                        'SELECT store_id FROM "order" WHERE order_num = ?',
+                        'SELECT store_id FROM "order" WHERE order_num = $1',
                         [refundData.order_num],
                         (err, result) => {
                             if (err || !result) {
@@ -3435,7 +3280,7 @@ const server = http.createServer((req, res) => {
                             const year = now.getFullYear().toString().slice(-3);
 
                             database.database.get(
-                                'SELECT COUNT(*) as refund_count FROM refund WHERE strftime("%Y", request_date) = ? AND strftime("%m", request_date) = ?',
+                                'SELECT COUNT(*)::int AS refund_count FROM refund WHERE EXTRACT(YEAR FROM request_date)::int = $1::int AND EXTRACT(MONTH FROM request_date)::int = $2::int',
                                 [now.getFullYear().toString(), (now.getMonth() + 1).toString().padStart(2, '0')],
                                 (err, result) => {
                                     if (err) {
@@ -3485,7 +3330,7 @@ const server = http.createServer((req, res) => {
                 const productData = JSON.parse(body);
 
                 database.database.get(
-                    'SELECT store_id FROM works_in_store WHERE personal_id = ?',
+                    'SELECT store_id FROM works_in_store WHERE personal_id = $1',
                     [personalId],
                     (err, bossStore) => {
                         if (err || !bossStore) {
@@ -3503,7 +3348,7 @@ const server = http.createServer((req, res) => {
                         }
 
                         database.database.get(
-                            'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
+                            'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
                             [personalId, storeId],
                             (err, ownsStore) => {
                                 if (err || !ownsStore) {
@@ -3512,9 +3357,9 @@ const server = http.createServer((req, res) => {
                                     return;
                                 }
 
-                                // FIXED: Changed SQL syntax from SUBSTRING(code FROM 4) to SUBSTR(code, 4) for SQLite compatibility
+                                // PostgreSQL: extract the numeric product sequence from the store-prefixed product code
                                 database.database.get(
-                                    'SELECT MAX(CAST(SUBSTR(code, 4) AS INTEGER)) as max_product_num FROM product WHERE store_id = ?',
+                                    'SELECT MAX(CAST(SUBSTRING(code FROM 4) AS INTEGER)) AS max_product_num FROM product WHERE store_id = $1',
                                     [storeId],
                                     (err, result) => {
                                         if (err) {
@@ -3583,7 +3428,7 @@ const server = http.createServer((req, res) => {
                 }
 
                 database.database.get(
-                    'SELECT store_id FROM product WHERE code = ?',
+                    'SELECT store_id FROM product WHERE code = $1',
                     [productData.code],
                     (err, product) => {
                         if (err || !product) {
@@ -3593,7 +3438,7 @@ const server = http.createServer((req, res) => {
                         }
 
                         database.database.get(
-                            'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
+                            'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
                             [personalId, product.store_id],
                             (err, ownsStore) => {
                                 if (err || !ownsStore) {
@@ -3720,7 +3565,7 @@ const server = http.createServer((req, res) => {
                         const hashedPassword = bcrypt.hashSync(newPassword, 10);
 
                         database.database.run(
-                            'UPDATE users SET password = ?, force_password_change = 0 WHERE id = ?',
+                            'UPDATE users SET password = $1, force_password_change = FALSE WHERE id = $2',
                             [hashedPassword, userId],
                             function(err) {
                                 if (err) {
@@ -3732,7 +3577,7 @@ const server = http.createServer((req, res) => {
 
                                 // Also update password in personal table if it exists (for admin)
                                 database.database.run(
-                                    'UPDATE personal SET password = ? WHERE id = ?',
+                                    'UPDATE personal SET password = $1 WHERE id = $2',
                                     [hashedPassword, userId],
                                     function(err) {
                                         if (err) {
@@ -3771,16 +3616,15 @@ const server = http.createServer((req, res) => {
                                     }
                                 }
 
-                                console.log(`✅ Password changed successfully for user ${userId}, redirecting to ${finalRedirect}`);
-                                console.log(`New session created: ${newSessionId} -> ${sessionUserId}`);
+                                console.log(`Password changed successfully for user ${userId}, redirecting to ${finalRedirect}`);
 
                                 database.logAudit(userId, 'FORCED_PASSWORD_CHANGE', 'auth', userId.toString(),
                                     `${user.user_type || 'user'} forced password change completed`, ipAddress);
 
-                                // Set the cookie with proper options - extended to 24 hours
+                                // Set the cookie with proper options
                                 res.writeHead(200, {
                                     'Content-Type': 'application/json',
-                                    'Set-Cookie': `sessionId=${newSessionId}; HttpOnly; Path=/; Max-Age=86400; SameSite=Strict`
+                                    'Set-Cookie': `sessionId=${newSessionId}; HttpOnly; Path=/; Max-Age=86400; SameSite=Strict` // Extended to 24 hours
                                 });
 
                                 res.end(JSON.stringify({
@@ -3807,7 +3651,7 @@ const server = http.createServer((req, res) => {
                                 const hashedPassword = bcrypt.hashSync(newPassword, 10);
 
                                 database.database.run(
-                                    'UPDATE personal SET password = ? WHERE id = ?',
+                                    'UPDATE personal SET password = $1 WHERE id = $2',
                                     [hashedPassword, userId],
                                     function(err) {
                                         if (err) {
@@ -3819,7 +3663,7 @@ const server = http.createServer((req, res) => {
 
                                         // Also update in users table if exists
                                         database.database.run(
-                                            'UPDATE users SET password = ?, force_password_change = 0 WHERE email = ?',
+                                            'UPDATE users SET password = $1, force_password_change = FALSE WHERE email = $2',
                                             [hashedPassword, personal.email],
                                             function(err) {
                                                 if (err) {
@@ -3830,7 +3674,7 @@ const server = http.createServer((req, res) => {
 
                                         // Determine user type (boss/owner or employee)
                                         database.database.get(
-                                            'SELECT boss_id FROM boss WHERE boss_id = ?',
+                                            'SELECT boss_id FROM boss WHERE boss_id = $1',
                                             [userId],
                                             (err, boss) => {
                                                 let userType = 'store_employee';
@@ -3848,8 +3692,7 @@ const server = http.createServer((req, res) => {
                                                 const newSessionId = generateSessionId();
                                                 sessions.set(newSessionId, `personal_${userId}`);
 
-                                                console.log(`✅ Password changed successfully for ${userType} ${userId}, redirecting to ${finalRedirect}`);
-                                                console.log(`New session created: ${newSessionId} -> personal_${userId}`);
+                                                console.log(`Password changed successfully for ${userType} ${userId}, redirecting to ${finalRedirect}`);
 
                                                 database.logAudit(userId, 'FORCED_PASSWORD_CHANGE', 'auth', userId.toString(),
                                                     `${userType} forced password change completed`, ipAddress);
@@ -3907,7 +3750,7 @@ const server = http.createServer((req, res) => {
             const personalId = userIdStr.replace('personal_', '');
 
             database.database.get(
-                'SELECT boss_id FROM boss WHERE boss_id = ?',
+                'SELECT boss_id FROM boss WHERE boss_id = $1',
                 [personalId],
                 (err, boss) => {
                     if (err || !boss) {
@@ -4013,7 +3856,7 @@ const server = http.createServer((req, res) => {
                                         }
 
                                         database.database.run(
-                                            'INSERT INTO personal (id, first_name, last_name, ssn, email, password) VALUES (?, ?, ?, ?, ?, ?)',
+                                            'INSERT INTO personal (id, first_name, last_name, ssn, email, password) VALUES ($1, $2, $3, $4, $5, $6)',
                                             [
                                                 newPersonalId,
                                                 firstName,
@@ -4041,7 +3884,7 @@ const server = http.createServer((req, res) => {
                                                 }
 
                                                 database.database.run(
-                                                    'INSERT INTO employees (employee_id, date_of_hire) VALUES (?, ?)',
+                                                    'INSERT INTO employees (employee_id, date_of_hire) VALUES ($1, $2)',
                                                     [newPersonalId, dateOfHire],
                                                     (err) => {
                                                         if (err) {
@@ -4053,7 +3896,7 @@ const server = http.createServer((req, res) => {
                                                         }
 
                                                         database.database.run(
-                                                            'INSERT INTO works_in_store (personal_id, store_id) VALUES (?, ?)',
+                                                            'INSERT INTO works_in_store (personal_id, store_id) VALUES ($1, $2)',
                                                             [newPersonalId, storeId],
                                                             (err) => {
                                                                 if (err) {
@@ -4065,7 +3908,7 @@ const server = http.createServer((req, res) => {
                                                                 }
 
                                                                 database.database.run(
-                                                                    'INSERT INTO permissions (personal_id, type, authorisation) VALUES (?, ?, ?)',
+                                                                    'INSERT INTO permissions (personal_id, type, authorisation) VALUES ($1, $2, $3)',
                                                                     [newPersonalId, 'EMPLOYEE', 'limited_access'],
                                                                     (err) => {
                                                                         if (err) {
@@ -4074,7 +3917,7 @@ const server = http.createServer((req, res) => {
 
                                                                         // Also create entry in users table for login with force_password_change = 1
                                                                         database.database.run(
-                                                                            'INSERT INTO users (id, username, email, password, user_type, force_password_change) VALUES (?, ?, ?, ?, ?, ?)',
+                                                                            'INSERT INTO users (id, username, email, password, user_type, force_password_change) VALUES ($1, $2, $3, $4, $5, $6)',
                                                                             [
                                                                                 newPersonalId,
                                                                                 `${firstName} ${lastName}`,
@@ -4147,7 +3990,7 @@ const server = http.createServer((req, res) => {
             const personalId = userIdStr.replace('personal_', '');
 
             database.database.get(
-                'SELECT boss_id FROM boss WHERE boss_id = ?',
+                'SELECT boss_id FROM boss WHERE boss_id = $1',
                 [personalId],
                 (err, boss) => {
                     if (err || !boss) {
@@ -4170,7 +4013,7 @@ const server = http.createServer((req, res) => {
                         }
 
                         database.database.get(
-                            'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
+                            'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
                             [personalId, storeId],
                             (err, bossStore) => {
                                 if (err || !bossStore) {
@@ -4180,7 +4023,7 @@ const server = http.createServer((req, res) => {
                                 }
 
                                 database.database.get(
-                                    'SELECT personal_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
+                                    'SELECT personal_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
                                     [employeeId, storeId],
                                     (err, employeeStore) => {
                                         if (err || !employeeStore) {
@@ -4190,7 +4033,7 @@ const server = http.createServer((req, res) => {
                                         }
 
                                         database.database.get(
-                                            'SELECT boss_id FROM boss WHERE boss_id = ?',
+                                            'SELECT boss_id FROM boss WHERE boss_id = $1',
                                             [employeeId],
                                             (err, isBoss) => {
                                                 if (err) {
@@ -4212,7 +4055,7 @@ const server = http.createServer((req, res) => {
                                                     }
 
                                                     database.database.run(
-                                                        'DELETE FROM works_in_store WHERE personal_id = ? AND store_id = ?',
+                                                        'DELETE FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
                                                         [employeeId, storeId],
                                                         (err) => {
                                                             if (err) {
@@ -4224,7 +4067,7 @@ const server = http.createServer((req, res) => {
                                                             }
 
                                                             database.database.run(
-                                                                'DELETE FROM employees WHERE employee_id = ?',
+                                                                'DELETE FROM employees WHERE employee_id = $1',
                                                                 [employeeId],
                                                                 (err) => {
                                                                     if (err) {
@@ -4232,7 +4075,7 @@ const server = http.createServer((req, res) => {
                                                                     }
 
                                                                     database.database.run(
-                                                                        'DELETE FROM permissions WHERE personal_id = ?',
+                                                                        'DELETE FROM permissions WHERE personal_id = $1',
                                                                         [employeeId],
                                                                         (err) => {
                                                                             if (err) {
@@ -4240,7 +4083,7 @@ const server = http.createServer((req, res) => {
                                                                             }
 
                                                                             database.database.run(
-                                                                                'DELETE FROM personal WHERE id = ?',
+                                                                                'DELETE FROM personal WHERE id = $1',
                                                                                 [employeeId],
                                                                                 (err) => {
                                                                                     if (err) {
@@ -4249,7 +4092,7 @@ const server = http.createServer((req, res) => {
 
                                                                                     // Also delete from users table
                                                                                     database.database.run(
-                                                                                        'DELETE FROM users WHERE id = ?',
+                                                                                        'DELETE FROM users WHERE id = $1',
                                                                                         [employeeId],
                                                                                         (err) => {
                                                                                             if (err) {
@@ -4316,7 +4159,7 @@ const server = http.createServer((req, res) => {
             const personalId = userIdStr.replace('personal_', '');
 
             database.database.get(
-                'SELECT boss_id FROM boss WHERE boss_id = ?',
+                'SELECT boss_id FROM boss WHERE boss_id = $1',
                 [personalId],
                 (err, boss) => {
                     if (err || !boss) {
@@ -4339,7 +4182,7 @@ const server = http.createServer((req, res) => {
                         }
 
                         database.database.get(
-                            'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
+                            'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
                             [personalId, storeId],
                             (err, bossStore) => {
                                 if (err || !bossStore) {
@@ -4349,7 +4192,7 @@ const server = http.createServer((req, res) => {
                                 }
 
                                 database.database.get(
-                                    'SELECT personal_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
+                                    'SELECT personal_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
                                     [employeeId, storeId],
                                     (err, employeeStore) => {
                                         if (err || !employeeStore) {
@@ -4373,7 +4216,7 @@ const server = http.createServer((req, res) => {
                                         }
 
                                         database.database.run(
-                                            'UPDATE permissions SET type = ?, authorisation = ? WHERE personal_id = ?',
+                                            'UPDATE permissions SET type = $1, authorisation = $2 WHERE personal_id = $3',
                                             [permissionType, authorization, employeeId],
                                             function(err) {
                                                 if (err) {
@@ -4422,7 +4265,7 @@ const server = http.createServer((req, res) => {
             const personalId = userIdStr.replace('personal_', '');
 
             database.database.get(
-                'SELECT boss_id FROM boss WHERE boss_id = ?',
+                'SELECT boss_id FROM boss WHERE boss_id = $1',
                 [personalId],
                 (err, boss) => {
                     if (err || !boss) {
@@ -4445,7 +4288,7 @@ const server = http.createServer((req, res) => {
                         }
 
                         database.database.get(
-                            'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
+                            'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
                             [personalId, storeId],
                             (err, bossStore) => {
                                 if (err || !bossStore) {
@@ -4455,7 +4298,7 @@ const server = http.createServer((req, res) => {
                                 }
 
                                 database.database.get(
-                                    'SELECT personal_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
+                                    'SELECT personal_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
                                     [employeeId, storeId],
                                     (err, employeeStore) => {
                                         if (err || !employeeStore) {
@@ -4468,12 +4311,12 @@ const server = http.createServer((req, res) => {
                                         const params = [];
 
                                         if (firstName) {
-                                            updates.push('first_name = ?');
+                                            updates.push(`first_name = $${params.length + 1}`);
                                             params.push(firstName);
                                         }
 
                                         if (lastName) {
-                                            updates.push('last_name = ?');
+                                            updates.push(`last_name = $${params.length + 1}`);
                                             params.push(lastName);
                                         }
 
@@ -4483,7 +4326,7 @@ const server = http.createServer((req, res) => {
                                                 res.end(JSON.stringify({ success: false, message: 'Invalid email format' }));
                                                 return;
                                             }
-                                            updates.push('email = ?');
+                                            updates.push(`email = $${params.length + 1}`);
                                             params.push(email);
                                         }
 
@@ -4496,7 +4339,7 @@ const server = http.createServer((req, res) => {
                                         params.push(employeeId);
 
                                         database.database.run(
-                                            `UPDATE personal SET ${updates.join(', ')} WHERE id = ?`,
+                                            `UPDATE personal SET ${updates.join(', ')} WHERE id = $${params.length}`,
                                             params,
                                             function(err) {
                                                 if (err) {
@@ -4509,7 +4352,7 @@ const server = http.createServer((req, res) => {
                                                 // Also update in users table if email was changed
                                                 if (email) {
                                                     database.database.run(
-                                                        'UPDATE users SET email = ? WHERE id = ?',
+                                                        'UPDATE users SET email = $1 WHERE id = $2',
                                                         [email, employeeId],
                                                         (err) => {
                                                             if (err) {
@@ -4521,13 +4364,13 @@ const server = http.createServer((req, res) => {
 
                                                 if (firstName || lastName) {
                                                     database.database.get(
-                                                        'SELECT first_name, last_name FROM personal WHERE id = ?',
+                                                        'SELECT first_name, last_name FROM personal WHERE id = $1',
                                                         [employeeId],
                                                         (err, personal) => {
                                                             if (!err && personal) {
                                                                 const newUsername = `${personal.first_name} ${personal.last_name}`;
                                                                 database.database.run(
-                                                                    'UPDATE users SET username = ? WHERE id = ?',
+                                                                    'UPDATE users SET username = $1 WHERE id = $2',
                                                                     [newUsername, employeeId],
                                                                     (err) => {
                                                                         if (err) {
@@ -4565,7 +4408,7 @@ const server = http.createServer((req, res) => {
 
             if (!storeId) {
                 database.database.get(
-                    'SELECT store_id FROM works_in_store WHERE personal_id = ? LIMIT 1',
+                    'SELECT store_id FROM works_in_store WHERE personal_id = $1 LIMIT 1',
                     [personalId],
                     (err, store) => {
                         if (err || !store) {
@@ -4590,7 +4433,7 @@ const server = http.createServer((req, res) => {
             }
 
             database.database.get(
-                'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
+                'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
                 [personalId, storeId],
                 (err, ownsStore) => {
                     if (err || !ownsStore) {
@@ -4619,7 +4462,7 @@ const server = http.createServer((req, res) => {
 
             if (!storeId) {
                 database.database.get(
-                    'SELECT store_id FROM works_in_store WHERE personal_id = ? LIMIT 1',
+                    'SELECT store_id FROM works_in_store WHERE personal_id = $1 LIMIT 1',
                     [personalId],
                     (err, store) => {
                         if (err || !store) {
@@ -4644,7 +4487,7 @@ const server = http.createServer((req, res) => {
             }
 
             database.database.get(
-                'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
+                'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
                 [personalId, storeId],
                 (err, ownsStore) => {
                     if (err || !ownsStore) {
@@ -4673,7 +4516,7 @@ const server = http.createServer((req, res) => {
 
             if (!storeId) {
                 database.database.get(
-                    'SELECT store_id FROM works_in_store WHERE personal_id = ? LIMIT 1',
+                    'SELECT store_id FROM works_in_store WHERE personal_id = $1 LIMIT 1',
                     [personalId],
                     (err, store) => {
                         if (err || !store) {
@@ -4698,7 +4541,7 @@ const server = http.createServer((req, res) => {
             }
 
             database.database.get(
-                'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
+                'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
                 [personalId, storeId],
                 (err, ownsStore) => {
                     if (err || !ownsStore) {
@@ -4727,7 +4570,7 @@ const server = http.createServer((req, res) => {
 
             if (!storeId) {
                 database.database.get(
-                    'SELECT store_id FROM works_in_store WHERE personal_id = ? LIMIT 1',
+                    'SELECT store_id FROM works_in_store WHERE personal_id = $1 LIMIT 1',
                     [personalId],
                     (err, store) => {
                         if (err || !store) {
@@ -4752,7 +4595,7 @@ const server = http.createServer((req, res) => {
             }
 
             database.database.get(
-                'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
+                'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
                 [personalId, storeId],
                 (err, ownsStore) => {
                     if (err || !ownsStore) {
@@ -4781,7 +4624,7 @@ const server = http.createServer((req, res) => {
 
             if (!storeId) {
                 database.database.get(
-                    'SELECT store_id FROM works_in_store WHERE personal_id = ? LIMIT 1',
+                    'SELECT store_id FROM works_in_store WHERE personal_id = $1 LIMIT 1',
                     [personalId],
                     (err, store) => {
                         if (err || !store) {
@@ -4806,7 +4649,7 @@ const server = http.createServer((req, res) => {
             }
 
             database.database.get(
-                'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
+                'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
                 [personalId, storeId],
                 (err, ownsStore) => {
                     if (err || !ownsStore) {
@@ -4907,7 +4750,7 @@ const server = http.createServer((req, res) => {
                 }
 
                 database.database.get(
-                    'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
+                    'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
                     [personalId, storeId],
                     (err, ownsStore) => {
                         if (err || !ownsStore) {
@@ -4976,7 +4819,7 @@ const server = http.createServer((req, res) => {
                 }
 
                 database.database.get(
-                    'SELECT store_id FROM works_in_store WHERE personal_id = ? AND store_id = ?',
+                    'SELECT store_id FROM works_in_store WHERE personal_id = $1 AND store_id = $2',
                     [personalId, storeId],
                     (err, ownsStore) => {
                         if (err || !ownsStore) {
@@ -4988,7 +4831,7 @@ const server = http.createServer((req, res) => {
                         const reportId = 'RPT' + Date.now().toString().slice(-6);
 
                         database.database.run(
-                            'INSERT INTO report (id, store_id, period, start_date, end_date, type, generated_by, generated_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
+                            'INSERT INTO report (id, store_id, period, start_date, end_date, type, generated_by, generated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)',
                             [reportId, storeId, period, startDate, endDate, type, personalId],
                             function(err) {
                                 if (err) {

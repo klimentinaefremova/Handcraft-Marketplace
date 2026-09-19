@@ -24,8 +24,8 @@ require('dotenv').config();
 const pool = new Pool({
     host: process.env.PGHOST || 'localhost',
     port: parseInt(process.env.PGPORT || '5432', 10),
-    database: process.env.PGDATABASE || 'handcraft',
-    user: process.env.PGUSER || 'postgres',
+    database: process.env.PGDATABASE || 'db_202526z_va_prj_handcraft_store',
+    user: process.env.PGUSER || 'db_202526z_va_prj_handcraft_store_owner',
     password: process.env.PGPASSWORD || '',
     max: 10,
     idleTimeoutMillis: 30000,
