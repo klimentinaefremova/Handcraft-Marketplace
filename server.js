@@ -910,6 +910,558 @@ AS $$
 $$;
 `;
 
+
+const TRIGGERS_SQL = String.raw`
+-- ============================================================
+-- HANDCRAFT MARKETPLACE TRIGGERS
+-- Compatible with the supplied project schema.
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION update_store_rating()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_order_num VARCHAR(11);
+    v_store_id VARCHAR(3);
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        v_order_num := OLD.order_num;
+    ELSE
+        v_order_num := NEW.order_num;
+    END IF;
+
+    v_store_id := LEFT(v_order_num, 3);
+
+    UPDATE store s
+    SET rating = COALESCE(
+        (
+            SELECT ROUND(AVG(r.rating), 1)
+            FROM review r
+            JOIN includes i
+              ON i.order_num = r.order_num
+            JOIN sells sl
+              ON sl.product_code = i.product_code
+             AND sl.store_ID = v_store_id
+            JOIN "order" o
+              ON o.order_num = r.order_num
+            WHERE LEFT(o.order_num, 3) = v_store_id
+        ),
+        0
+    )
+    WHERE s.store_ID = v_store_id;
+
+    RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_update_store_rating ON review;
+
+CREATE TRIGGER trg_update_store_rating
+AFTER INSERT OR UPDATE OR DELETE
+ON review
+FOR EACH ROW
+EXECUTE FUNCTION update_store_rating();
+
+
+CREATE OR REPLACE FUNCTION check_product_availability()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_available_quantity INTEGER;
+BEGIN
+    SELECT p.availability
+    INTO v_available_quantity
+    FROM product p
+    WHERE p.code = NEW.product_code
+    FOR UPDATE;
+
+    IF v_available_quantity IS NULL THEN
+        RAISE EXCEPTION
+            'Product % does not exist or is not available.',
+            NEW.product_code;
+    END IF;
+
+    IF TG_OP = 'INSERT' THEN
+        IF NEW.quantity > v_available_quantity THEN
+            RAISE EXCEPTION
+                'Insufficient stock for product %. Available: %, requested: %.',
+                NEW.product_code,
+                v_available_quantity,
+                NEW.quantity;
+        END IF;
+
+    ELSIF TG_OP = 'UPDATE' THEN
+        IF NEW.product_code = OLD.product_code THEN
+            IF NEW.quantity > OLD.quantity
+               AND (NEW.quantity - OLD.quantity) > v_available_quantity THEN
+                RAISE EXCEPTION
+                    'Insufficient stock for product %. Available: %, additional requested: %.',
+                    NEW.product_code,
+                    v_available_quantity,
+                    NEW.quantity - OLD.quantity;
+            END IF;
+        ELSE
+            IF NEW.quantity > v_available_quantity THEN
+                RAISE EXCEPTION
+                    'Insufficient stock for product %. Available: %, requested: %.',
+                    NEW.product_code,
+                    v_available_quantity,
+                    NEW.quantity;
+            END IF;
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_check_product_availability ON includes;
+
+CREATE TRIGGER trg_check_product_availability
+BEFORE INSERT OR UPDATE
+ON includes
+FOR EACH ROW
+EXECUTE FUNCTION check_product_availability();
+
+
+CREATE OR REPLACE FUNCTION update_product_availability()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+
+        UPDATE product
+        SET availability = availability - NEW.quantity
+        WHERE code = NEW.product_code;
+
+    ELSIF TG_OP = 'UPDATE' THEN
+
+        IF NEW.product_code = OLD.product_code THEN
+
+            UPDATE product
+            SET availability = availability - (NEW.quantity - OLD.quantity)
+            WHERE code = NEW.product_code;
+
+        ELSE
+
+            UPDATE product
+            SET availability = availability + OLD.quantity
+            WHERE code = OLD.product_code;
+
+            UPDATE product
+            SET availability = availability - NEW.quantity
+            WHERE code = NEW.product_code;
+
+        END IF;
+
+    ELSIF TG_OP = 'DELETE' THEN
+
+        UPDATE product
+        SET availability = availability + OLD.quantity
+        WHERE code = OLD.product_code;
+
+    END IF;
+
+    RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_update_product_availability ON includes;
+
+CREATE TRIGGER trg_update_product_availability
+AFTER INSERT OR UPDATE OR DELETE
+ON includes
+FOR EACH ROW
+EXECUTE FUNCTION update_product_availability();
+
+
+CREATE OR REPLACE FUNCTION delete_product_changes()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    DELETE FROM "change"
+    WHERE product_code = OLD.code;
+
+    RETURN OLD;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_delete_product_changes ON product;
+
+CREATE TRIGGER trg_delete_product_changes
+BEFORE DELETE
+ON product
+FOR EACH ROW
+EXECUTE FUNCTION delete_product_changes();
+
+
+CREATE OR REPLACE FUNCTION prevent_store_deletion()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM report
+        WHERE store_ID = OLD.store_ID
+    ) THEN
+        RAISE EXCEPTION
+            'Store % cannot be deleted because it has existing reports.',
+            OLD.store_ID;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM sells
+        WHERE store_ID = OLD.store_ID
+    ) THEN
+        RAISE EXCEPTION
+            'Store % cannot be deleted because it has existing product records.',
+            OLD.store_ID;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM "order"
+        WHERE LEFT(order_num, 3) = OLD.store_ID
+    ) THEN
+        RAISE EXCEPTION
+            'Store % cannot be deleted because it has existing orders.',
+            OLD.store_ID;
+    END IF;
+
+    RETURN OLD;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_prevent_store_deletion ON store;
+
+CREATE TRIGGER trg_prevent_store_deletion
+BEFORE DELETE
+ON store
+FOR EACH ROW
+EXECUTE FUNCTION prevent_store_deletion();
+
+
+CREATE OR REPLACE FUNCTION update_order_modified_date()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    NEW.last_date_mod := CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_update_order_modified_date ON "order";
+
+CREATE TRIGGER trg_update_order_modified_date
+BEFORE UPDATE
+ON "order"
+FOR EACH ROW
+EXECUTE FUNCTION update_order_modified_date();
+
+
+CREATE OR REPLACE FUNCTION validate_employee_authorization()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_authorisation TEXT;
+BEGIN
+    SELECT p.authorisation
+    INTO v_authorisation
+    FROM permissions p
+    WHERE p.personal_id = NEW.personal_id;
+
+    IF v_authorisation IS NULL THEN
+        RAISE EXCEPTION
+            'Employee % does not have valid authorization.',
+            NEW.personal_id;
+    END IF;
+
+    -- makes_change has no authorisation column in the supplied schema.
+    -- The employee's permission row is therefore the source of truth.
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_validate_employee_authorization ON makes_change;
+
+CREATE TRIGGER trg_validate_employee_authorization
+BEFORE INSERT OR UPDATE
+ON makes_change
+FOR EACH ROW
+EXECUTE FUNCTION validate_employee_authorization();
+
+
+CREATE OR REPLACE FUNCTION initialize_employee_statistics()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    /*
+     * The schema creates an employee before store/report assignment in the
+     * normal application flow. If an assignment and a report already exist,
+     * create a zero-hours starting record; otherwise there is nothing to
+     * initialize yet.
+     */
+    INSERT INTO worked (
+        personal_id,
+        report_date,
+        store_ID,
+        wage,
+        pay_method,
+        total_hours,
+        week
+    )
+    SELECT
+        NEW.employee_id,
+        r.date,
+        wis.store_ID,
+        0,
+        'full_time',
+        0,
+        TO_CHAR(CURRENT_DATE - INTERVAL '6 days', 'DD.MM.YYYY')
+            || ' - ' ||
+        TO_CHAR(CURRENT_DATE, 'DD.MM.YYYY')
+    FROM works_in_store wis
+    JOIN LATERAL (
+        SELECT r2.date
+        FROM report r2
+        WHERE r2.store_ID = wis.store_ID
+        ORDER BY r2.date DESC
+        LIMIT 1
+    ) r ON TRUE
+    WHERE wis.personal_id = NEW.employee_id
+    ON CONFLICT (personal_id, report_date, store_ID) DO NOTHING;
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_initialize_employee_statistics ON employees;
+
+CREATE TRIGGER trg_initialize_employee_statistics
+AFTER INSERT
+ON employees
+FOR EACH ROW
+EXECUTE FUNCTION initialize_employee_statistics();
+`;
+
+
+const VIEWS_SQL = String.raw`
+-- ============================================================
+-- HANDCRAFT MARKETPLACE VIEWS
+-- Compatible with the supplied project schema.
+-- ============================================================
+
+DROP VIEW IF EXISTS vw_product_store_overview;
+CREATE VIEW vw_product_store_overview AS
+SELECT
+    p.code AS product_code,
+    p.description,
+    p.price,
+    p.availability,
+    p.weight,
+    p.width_x_length_x_depth,
+    p.aprox_production_time,
+    s.store_ID,
+    s.name AS store_name,
+    s.physical_address,
+    s.rating,
+    sl.discount
+FROM product p
+JOIN sells sl
+    ON sl.product_code = p.code
+JOIN store s
+    ON s.store_ID = sl.store_ID;
+
+
+DROP VIEW IF EXISTS vw_customer_order_overview;
+CREATE VIEW vw_customer_order_overview AS
+SELECT
+    o.order_num,
+    i.quantity,
+    o.status,
+    o.last_date_mod,
+    o.payment_method,
+    o.discount,
+    c.client_ID,
+    c.first_name,
+    c.last_name,
+    c.email,
+    p.code AS product_code,
+    p.description AS product_description,
+    p.price
+FROM "order" o
+JOIN makes_request mr
+    ON mr.order_num = o.order_num
+JOIN client c
+    ON c.client_ID = mr.client_ID
+JOIN includes i
+    ON i.order_num = o.order_num
+JOIN product p
+    ON p.code = i.product_code;
+
+
+DROP VIEW IF EXISTS vw_monthly_sales_profit;
+CREATE VIEW vw_monthly_sales_profit AS
+SELECT
+    s.store_ID,
+    s.name AS store_name,
+    r.date AS report_date,
+    mp.month_and_year,
+    mp.profit,
+    r.overall_profit,
+    ed.monthly_profit,
+    ed.sales,
+    ed.damages
+FROM store s
+JOIN report r
+    ON r.store_ID = s.store_ID
+LEFT JOIN monthly_profit mp
+    ON mp.report_date = r.date
+   AND mp.store_ID = r.store_ID
+LEFT JOIN exchanges_data ed
+    ON ed.report_date = r.date
+   AND ed.store_ID = r.store_ID;
+
+
+DROP VIEW IF EXISTS vw_employee_workload_salary;
+CREATE VIEW vw_employee_workload_salary AS
+SELECT
+    e.employee_id,
+    p.first_name,
+    p.last_name,
+    p.email,
+    e.date_of_hire,
+    s.store_ID,
+    s.name AS store_name,
+    w.week,
+    w.total_hours,
+    w.wage,
+    w.pay_method,
+    COALESCE(w.wage * w.total_hours, 0) AS total_pay
+FROM employees e
+JOIN personal p
+    ON p.id = e.employee_id
+JOIN works_in_store wis
+    ON wis.personal_id = e.employee_id
+JOIN store s
+    ON s.store_ID = wis.store_ID
+LEFT JOIN worked w
+    ON w.personal_id = e.employee_id
+   AND w.store_ID = wis.store_ID;
+
+
+DROP VIEW IF EXISTS vw_customer_request_response;
+CREATE VIEW vw_customer_request_response AS
+SELECT
+    r.request_num,
+    r.date_and_time,
+    r.problem,
+    r.notes_of_communication,
+    r.customer_satisfaction,
+    c.client_ID,
+    c.first_name AS client_first_name,
+    c.last_name AS client_last_name,
+    c.email AS client_email,
+    p.id AS employee_id,
+    p.first_name AS employee_first_name,
+    p.last_name AS employee_last_name
+FROM request r
+LEFT JOIN client c
+    ON c.client_ID = CASE
+        WHEN SUBSTRING(r.request_num FROM 9 FOR 4) ~ '^[0-9]{4}$'
+        THEN SUBSTRING(r.request_num FROM 9 FOR 4)::INTEGER
+        ELSE NULL
+    END
+LEFT JOIN answers a
+    ON a.request_num = r.request_num
+LEFT JOIN personal p
+    ON p.id = a.personal_id;
+
+
+DROP VIEW IF EXISTS vw_store_inventory;
+CREATE VIEW vw_store_inventory AS
+SELECT
+    s.store_ID,
+    s.name AS store_name,
+    p.code AS product_code,
+    p.description,
+    p.price,
+    p.availability,
+    p.aprox_production_time,
+    sl.discount
+FROM store s
+JOIN sells sl
+    ON sl.store_ID = s.store_ID
+JOIN product p
+    ON p.code = sl.product_code;
+
+
+DROP VIEW IF EXISTS vw_customer_order_history;
+CREATE VIEW vw_customer_order_history AS
+SELECT
+    c.client_ID,
+    c.first_name,
+    c.last_name,
+    c.email,
+    o.order_num,
+    i.quantity,
+    o.status,
+    o.last_date_mod,
+    o.payment_method,
+    o.discount,
+    p.code AS product_code,
+    p.description AS product_description,
+    p.price
+FROM client c
+JOIN makes_request mr
+    ON mr.client_ID = c.client_ID
+JOIN "order" o
+    ON o.order_num = mr.order_num
+JOIN includes i
+    ON i.order_num = o.order_num
+JOIN product p
+    ON p.code = i.product_code;
+
+
+DROP VIEW IF EXISTS vw_store_performance;
+CREATE VIEW vw_store_performance AS
+SELECT
+    s.store_ID,
+    s.name AS store_name,
+    s.date_of_founding,
+    s.rating,
+    COUNT(DISTINCT r.date) AS number_of_reports,
+    COALESCE(SUM(mp.profit), 0) AS total_reported_profit,
+    COALESCE(MAX(r.overall_profit), 0) AS overall_profit,
+    COALESCE(SUM(ed.sales), 0) AS total_sales,
+    COALESCE(SUM(ed.damages), 0) AS total_damages,
+    COALESCE(SUM(ed.monthly_profit), 0) AS total_monthly_profit
+FROM store s
+LEFT JOIN report r
+    ON r.store_ID = s.store_ID
+LEFT JOIN monthly_profit mp
+    ON mp.report_date = r.date
+   AND mp.store_ID = r.store_ID
+LEFT JOIN exchanges_data ed
+    ON ed.report_date = r.date
+   AND ed.store_ID = r.store_ID
+GROUP BY
+    s.store_ID,
+    s.name,
+    s.date_of_founding,
+    s.rating;
+`;
+
+
 const database = {
     database: {
         get(sql, params, callback) {
@@ -1032,6 +1584,14 @@ const database = {
     async installReportFunctions() {
         await pool.query(REPORT_FUNCTIONS_SQL);
         console.log('✅ PostgreSQL report functions installed');
+    },
+
+    async installTriggersAndViews() {
+        await pool.query(TRIGGERS_SQL);
+        console.log('✅ PostgreSQL triggers installed');
+
+        await pool.query(VIEWS_SQL);
+        console.log('✅ PostgreSQL views installed');
     },
 
     runReport(reportName, params, callback) {
@@ -2161,6 +2721,7 @@ const database = {
     try {
         await database.initializeDatabase();
         await database.installReportFunctions();
+        await database.installTriggersAndViews();
         console.log('✅ Database initialization completed');
     } catch (err) {
         console.error('❌ Database initialization failed:', err);
