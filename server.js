@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const bcrypt = require('bcryptjs');
+const { AsyncLocalStorage } = require('async_hooks');
 require('dotenv').config();
 
 const port = process.env.PORT || 3000;
@@ -355,14 +356,559 @@ const pool = new Pool({
     idleTimeoutMillis: 30000
 });
 
-let transactionClient = null;
+const transactionStorage = new AsyncLocalStorage();
 
 function dbQuery(sql, params = [], callback) {
-    const client = transactionClient || pool;
+    const client = transactionStorage.getStore() || pool;
+
     client.query(sql, params)
         .then(result => callback(null, result))
         .catch(err => callback(err));
 }
+
+const REPORT_FUNCTIONS_SQL = String.raw`
+-- ============================================================
+-- HANDCRAFT MARKETPLACE REPORT FUNCTIONS
+-- PostgreSQL / exact project schema
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION get_orders_by_total()
+RETURNS TABLE (
+    order_num VARCHAR(11),
+    client_id INTEGER,
+    client_name TEXT,
+    order_quantity BIGINT,
+    order_status VARCHAR(20),
+    payment_method VARCHAR(250),
+    discount NUMERIC,
+    order_total NUMERIC
+)
+LANGUAGE sql
+AS $$
+    SELECT
+        o.order_num,
+        o.client_id,
+        CONCAT_WS(' ', c.first_name, c.last_name) AS client_name,
+        COALESCE(SUM(i.quantity), 0)::BIGINT AS order_quantity,
+        o.status,
+        o.payment_method,
+        COALESCE(o.discount, 0)::NUMERIC AS discount,
+        ROUND(
+            COALESCE(SUM(p.price * i.quantity), 0)
+            * (1 - COALESCE(o.discount, 0) / 100.0),
+            2
+        ) AS order_total
+    FROM "order" o
+    LEFT JOIN client c ON c.client_id = o.client_id
+    LEFT JOIN includes i ON i.order_num = o.order_num
+    LEFT JOIN product p ON p.code = i.product_code
+    GROUP BY
+        o.order_num, o.client_id, c.first_name, c.last_name,
+        o.status, o.payment_method, o.discount
+    ORDER BY 8 DESC, o.order_num;
+$$;
+
+CREATE OR REPLACE FUNCTION get_products_by_total_sales()
+RETURNS TABLE (
+    product_code VARCHAR(8),
+    product_description VARCHAR(500),
+    product_price NUMERIC,
+    number_of_orders BIGINT,
+    total_quantity_sold BIGINT,
+    total_revenue NUMERIC
+)
+LANGUAGE sql
+AS $$
+    SELECT
+        p.code,
+        p.description,
+        p.price::NUMERIC,
+        COUNT(DISTINCT i.order_num) AS number_of_orders,
+        COALESCE(SUM(i.quantity), 0)::BIGINT AS total_quantity_sold,
+        ROUND(
+            COALESCE(
+                SUM(
+                    p.price * i.quantity
+                    * (1 - COALESCE(o.discount, 0) / 100.0)
+                ),
+                0
+            ),
+            2
+        ) AS total_revenue
+    FROM product p
+    LEFT JOIN includes i ON i.product_code = p.code
+    LEFT JOIN "order" o ON o.order_num = i.order_num
+    GROUP BY p.code, p.description, p.price
+    ORDER BY 4 DESC, 5 DESC, 6 DESC;
+$$;
+
+CREATE OR REPLACE FUNCTION get_low_stock_high_demand_products(
+    p_stock_threshold INTEGER,
+    p_demand_threshold INTEGER
+)
+RETURNS TABLE (
+    product_code VARCHAR(8),
+    product_description VARCHAR(500),
+    current_stock INTEGER,
+    number_of_orders BIGINT,
+    total_quantity_sold BIGINT
+)
+LANGUAGE sql
+AS $$
+    SELECT
+        p.code,
+        p.description,
+        p.availability,
+        COUNT(DISTINCT i.order_num),
+        COALESCE(SUM(i.quantity), 0)::BIGINT
+    FROM product p
+    JOIN includes i ON i.product_code = p.code
+    GROUP BY p.code, p.description, p.availability
+    HAVING
+        p.availability < p_stock_threshold
+        AND COUNT(DISTINCT i.order_num) >= p_demand_threshold
+    ORDER BY 4 DESC, 5 DESC, 3 ASC;
+$$;
+
+CREATE OR REPLACE FUNCTION get_products_monthly_sales()
+RETURNS TABLE (
+    product_code VARCHAR(8),
+    product_description VARCHAR(500),
+    year INTEGER,
+    month INTEGER,
+    number_of_orders BIGINT,
+    total_quantity_sold BIGINT,
+    total_revenue NUMERIC
+)
+LANGUAGE sql
+AS $$
+    SELECT
+        p.code,
+        p.description,
+        EXTRACT(YEAR FROM o.last_date_mod)::INTEGER,
+        EXTRACT(MONTH FROM o.last_date_mod)::INTEGER,
+        COUNT(DISTINCT o.order_num),
+        COALESCE(SUM(i.quantity), 0)::BIGINT,
+        ROUND(
+            COALESCE(
+                SUM(
+                    p.price * i.quantity
+                    * (1 - COALESCE(o.discount, 0) / 100.0)
+                ),
+                0
+            ),
+            2
+        )
+    FROM product p
+    JOIN includes i ON i.product_code = p.code
+    JOIN "order" o ON o.order_num = i.order_num
+    GROUP BY
+        p.code, p.description,
+        EXTRACT(YEAR FROM o.last_date_mod),
+        EXTRACT(MONTH FROM o.last_date_mod)
+    ORDER BY 3 DESC, 4 DESC, 7 DESC;
+$$;
+
+CREATE OR REPLACE FUNCTION get_stores_by_last_calendar_year_revenue()
+RETURNS TABLE (
+    store_id VARCHAR(3),
+    store_name VARCHAR(50),
+    number_of_orders BIGINT,
+    total_quantity_sold BIGINT,
+    total_revenue NUMERIC
+)
+LANGUAGE sql
+AS $$
+    SELECT
+        s.store_id,
+        s.name,
+        COUNT(DISTINCT o.order_num),
+        COALESCE(SUM(i.quantity), 0)::BIGINT,
+        ROUND(
+            COALESCE(
+                SUM(
+                    p.price * i.quantity
+                    * (1 - COALESCE(o.discount, 0) / 100.0)
+                ),
+                0
+            ),
+            2
+        )
+    FROM store s
+    LEFT JOIN sells se ON se.store_id = s.store_id
+    LEFT JOIN product p ON p.code = se.product_code
+    LEFT JOIN includes i ON i.product_code = p.code
+    LEFT JOIN "order" o
+        ON o.order_num = i.order_num
+       AND o.last_date_mod >= DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 year'
+       AND o.last_date_mod < DATE_TRUNC('year', CURRENT_DATE)
+    GROUP BY s.store_id, s.name
+    ORDER BY 5 DESC, s.store_id;
+$$;
+
+CREATE OR REPLACE FUNCTION get_products_never_ordered()
+RETURNS TABLE (
+    product_code VARCHAR(8),
+    product_description VARCHAR(500),
+    product_price NUMERIC,
+    current_stock INTEGER
+)
+LANGUAGE sql
+AS $$
+    SELECT p.code, p.description, p.price::NUMERIC, p.availability
+    FROM product p
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM includes i
+        WHERE i.product_code = p.code
+    )
+    ORDER BY p.code;
+$$;
+
+CREATE OR REPLACE FUNCTION get_products_by_number_of_orders()
+RETURNS TABLE (
+    product_code VARCHAR(8),
+    product_description VARCHAR(500),
+    product_price NUMERIC,
+    number_of_orders BIGINT
+)
+LANGUAGE sql
+AS $$
+    SELECT
+        p.code,
+        p.description,
+        p.price::NUMERIC,
+        COUNT(DISTINCT i.order_num)
+    FROM product p
+    JOIN includes i ON i.product_code = p.code
+    GROUP BY p.code, p.description, p.price
+    ORDER BY 4 DESC, p.code;
+$$;
+
+CREATE OR REPLACE FUNCTION get_stores_by_average_review()
+RETURNS TABLE (
+    store_id VARCHAR(3),
+    store_name VARCHAR(50),
+    average_review NUMERIC,
+    number_of_reviews BIGINT
+)
+LANGUAGE sql
+AS $$
+    WITH store_reviews AS (
+        SELECT DISTINCT
+            s.store_id,
+            s.name AS store_name,
+            r.order_num,
+            r.rating
+        FROM store s
+        JOIN sells se ON se.store_id = s.store_id
+        JOIN includes i ON i.product_code = se.product_code
+        JOIN review r ON r.order_num = i.order_num
+    )
+    SELECT
+        s.store_id,
+        s.name,
+        COALESCE(ROUND(AVG(sr.rating), 2), 0)::NUMERIC,
+        COUNT(sr.order_num)
+    FROM store s
+    LEFT JOIN store_reviews sr ON sr.store_id = s.store_id
+    GROUP BY s.store_id, s.name
+    ORDER BY 3 DESC, s.store_id;
+$$;
+
+CREATE OR REPLACE FUNCTION get_store_with_highest_revenue_growth()
+RETURNS TABLE (
+    store_id VARCHAR(3),
+    store_name VARCHAR(50),
+    previous_year_revenue NUMERIC,
+    last_year_revenue NUMERIC,
+    revenue_growth NUMERIC
+)
+LANGUAGE sql
+AS $$
+    WITH store_years AS (
+        SELECT
+            s.store_id,
+            s.name AS store_name,
+            EXTRACT(YEAR FROM o.last_date_mod)::INTEGER AS sales_year,
+            SUM(
+                p.price * i.quantity
+                * (1 - COALESCE(o.discount, 0) / 100.0)
+            ) AS revenue
+        FROM store s
+        JOIN sells se ON se.store_id = s.store_id
+        JOIN includes i ON i.product_code = se.product_code
+        JOIN product p ON p.code = i.product_code
+        JOIN "order" o ON o.order_num = i.order_num
+        WHERE o.last_date_mod >= DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '2 years'
+          AND o.last_date_mod < DATE_TRUNC('year', CURRENT_DATE)
+        GROUP BY s.store_id, s.name, EXTRACT(YEAR FROM o.last_date_mod)
+    ),
+    comparison AS (
+        SELECT
+            s.store_id,
+            s.name AS store_name,
+            COALESCE(MAX(CASE
+                WHEN sy.sales_year = EXTRACT(YEAR FROM CURRENT_DATE)::INTEGER - 2
+                THEN sy.revenue ELSE 0 END), 0) AS previous_year_revenue,
+            COALESCE(MAX(CASE
+                WHEN sy.sales_year = EXTRACT(YEAR FROM CURRENT_DATE)::INTEGER - 1
+                THEN sy.revenue ELSE 0 END), 0) AS last_year_revenue
+        FROM store s
+        LEFT JOIN store_years sy ON sy.store_id = s.store_id
+        GROUP BY s.store_id, s.name
+    )
+    SELECT
+        store_id,
+        store_name,
+        ROUND(previous_year_revenue, 2),
+        ROUND(last_year_revenue, 2),
+        ROUND(last_year_revenue - previous_year_revenue, 2)
+    FROM comparison
+    ORDER BY 5 DESC, store_id
+    LIMIT 1;
+$$;
+
+CREATE OR REPLACE FUNCTION get_clients_by_number_of_orders()
+RETURNS TABLE (
+    client_id INTEGER,
+    client_name TEXT,
+    number_of_orders BIGINT
+)
+LANGUAGE sql
+AS $$
+    SELECT
+        c.client_id,
+        CONCAT_WS(' ', c.first_name, c.last_name),
+        COUNT(o.order_num)
+    FROM client c
+    JOIN "order" o ON o.client_id = c.client_id
+    GROUP BY c.client_id, c.first_name, c.last_name
+    ORDER BY 3 DESC, c.client_id;
+$$;
+
+CREATE OR REPLACE FUNCTION get_approximate_orders_per_client()
+RETURNS TABLE (
+    total_clients BIGINT,
+    total_orders BIGINT,
+    approximate_orders_per_client NUMERIC
+)
+LANGUAGE sql
+AS $$
+    SELECT
+        (SELECT COUNT(*) FROM client),
+        (SELECT COUNT(*) FROM "order"),
+        ROUND(
+            (SELECT COUNT(*)::NUMERIC FROM "order")
+            / NULLIF((SELECT COUNT(*) FROM client), 0),
+            2
+        );
+$$;
+
+CREATE OR REPLACE FUNCTION get_clients_without_orders()
+RETURNS TABLE (
+    client_id INTEGER,
+    client_name TEXT,
+    email VARCHAR(50)
+)
+LANGUAGE sql
+AS $$
+    SELECT
+        c.client_id,
+        CONCAT_WS(' ', c.first_name, c.last_name),
+        c.email
+    FROM client c
+    WHERE NOT EXISTS (
+        SELECT 1 FROM "order" o WHERE o.client_id = c.client_id
+    )
+    ORDER BY c.client_id;
+$$;
+
+CREATE OR REPLACE FUNCTION get_store_request_statistics()
+RETURNS TABLE (
+    store_id VARCHAR(3),
+    store_name VARCHAR(50),
+    total_requests BIGINT,
+    solved_requests BIGINT,
+    requests_in_progress BIGINT
+)
+LANGUAGE sql
+AS $$
+    SELECT
+        s.store_id,
+        s.name,
+        COUNT(r.request_num),
+        COUNT(r.request_num) FILTER (WHERE r.customer_satisfaction > 0),
+        COUNT(r.request_num) FILTER (WHERE r.customer_satisfaction <= 0)
+    FROM store s
+    LEFT JOIN for_store fs ON fs.store_id = s.store_id
+    LEFT JOIN request r ON r.request_num = fs.request_num
+    GROUP BY s.store_id, s.name
+    ORDER BY 3 DESC, s.store_id;
+$$;
+
+CREATE OR REPLACE FUNCTION get_top_10_employees_by_requests_last_month()
+RETURNS TABLE (
+    employee_id VARCHAR(10),
+    employee_name TEXT,
+    number_of_requests BIGINT
+)
+LANGUAGE sql
+AS $$
+    SELECT
+        e.employee_id,
+        CONCAT_WS(' ', p.first_name, p.last_name),
+        COUNT(DISTINCT a.request_num)
+    FROM employees e
+    JOIN personal p ON p.id = e.employee_id
+    JOIN answers a ON a.personal_id = e.employee_id
+    JOIN request r ON r.request_num = a.request_num
+    WHERE r.date_and_time >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month'
+      AND r.date_and_time < DATE_TRUNC('month', CURRENT_DATE)
+    GROUP BY e.employee_id, p.first_name, p.last_name
+    ORDER BY 3 DESC, e.employee_id
+    LIMIT 10;
+$$;
+
+CREATE OR REPLACE FUNCTION get_employees_by_hours_and_pay()
+RETURNS TABLE (
+    employee_id VARCHAR(10),
+    employee_name TEXT,
+    total_hours_worked NUMERIC,
+    total_pay NUMERIC
+)
+LANGUAGE sql
+AS $$
+    SELECT
+        e.employee_id,
+        CONCAT_WS(' ', p.first_name, p.last_name),
+        COALESCE(SUM(w.total_hours), 0),
+        COALESCE(SUM(w.wage * w.total_hours), 0)
+    FROM employees e
+    JOIN personal p ON p.id = e.employee_id
+    LEFT JOIN worked w ON w.personal_id = e.employee_id
+    GROUP BY e.employee_id, p.first_name, p.last_name
+    ORDER BY 3 DESC, 4 DESC, e.employee_id;
+$$;
+
+CREATE OR REPLACE FUNCTION get_stores_average_pay()
+RETURNS TABLE (
+    store_id VARCHAR(3),
+    store_name VARCHAR(50),
+    average_pay NUMERIC
+)
+LANGUAGE sql
+AS $$
+    SELECT
+        s.store_id,
+        s.name,
+        COALESCE(ROUND(AVG(w.wage), 2), 0)
+    FROM store s
+    LEFT JOIN worked w ON w.store_id = s.store_id
+    GROUP BY s.store_id, s.name
+    ORDER BY 3 DESC, s.store_id;
+$$;
+
+CREATE OR REPLACE FUNCTION get_employee_product_changes_last_month()
+RETURNS TABLE (
+    employee_id VARCHAR(10),
+    employee_name TEXT,
+    number_of_product_changes BIGINT
+)
+LANGUAGE sql
+AS $$
+    SELECT
+        e.employee_id,
+        CONCAT_WS(' ', p.first_name, p.last_name),
+        COUNT(mc.change_date_time)
+    FROM employees e
+    JOIN personal p ON p.id = e.employee_id
+    LEFT JOIN makes_change mc
+        ON mc.personal_id = e.employee_id
+       AND mc.change_date_time >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month'
+       AND mc.change_date_time < DATE_TRUNC('month', CURRENT_DATE)
+    GROUP BY e.employee_id, p.first_name, p.last_name
+    ORDER BY 3 DESC, e.employee_id;
+$$;
+
+CREATE OR REPLACE FUNCTION get_stores_by_monthly_profit_and_revenue_growth()
+RETURNS TABLE (
+    store_id VARCHAR(3),
+    store_name VARCHAR(50),
+    month_and_year TEXT,
+    monthly_profit NUMERIC,
+    previous_month_revenue NUMERIC,
+    current_month_revenue NUMERIC,
+    revenue_growth NUMERIC
+)
+LANGUAGE sql
+AS $$
+    WITH monthly_revenue AS (
+        SELECT
+            s.store_id,
+            s.name AS store_name,
+            DATE_TRUNC('month', o.last_date_mod)::DATE AS month_date,
+            SUM(
+                p.price * i.quantity
+                * (1 - COALESCE(o.discount, 0) / 100.0)
+            ) AS revenue
+        FROM store s
+        JOIN sells se ON se.store_id = s.store_id
+        JOIN includes i ON i.product_code = se.product_code
+        JOIN product p ON p.code = i.product_code
+        JOIN "order" o ON o.order_num = i.order_num
+        GROUP BY s.store_id, s.name, DATE_TRUNC('month', o.last_date_mod)
+    ),
+    with_previous AS (
+        SELECT
+            store_id,
+            store_name,
+            month_date,
+            revenue,
+            LAG(revenue) OVER (
+                PARTITION BY store_id
+                ORDER BY month_date
+            ) AS previous_revenue
+        FROM monthly_revenue
+    )
+    SELECT
+        store_id,
+        store_name,
+        TO_CHAR(month_date, 'YYYY-MM'),
+        ROUND(revenue, 2),
+        ROUND(COALESCE(previous_revenue, 0), 2),
+        ROUND(revenue, 2),
+        ROUND(revenue - COALESCE(previous_revenue, 0), 2)
+    FROM with_previous
+    ORDER BY month_date DESC, 4 DESC, store_id;
+$$;
+
+CREATE OR REPLACE FUNCTION get_unapproved_reports()
+RETURNS TABLE (
+    report_date TIMESTAMP,
+    store_id VARCHAR(3),
+    overall_profit NUMERIC,
+    sales_trend VARCHAR(100),
+    marketing_growth VARCHAR(100),
+    owner_signature VARCHAR(50)
+)
+LANGUAGE sql
+AS $$
+    SELECT
+        r.date,
+        r.store_id,
+        r.overall_profit,
+        r.sales_trend,
+        r.marketing_growth,
+        r.owner_signature
+    FROM report r
+    LEFT JOIN approves a
+        ON a.report_date = r.date
+       AND a.store_id = r.store_id
+    WHERE a.report_date IS NULL
+    ORDER BY r.date DESC, r.store_id;
+$$;
+`;
 
 const database = {
     database: {
@@ -392,59 +938,83 @@ const database = {
             const normalized = String(sql).trim().replace(/;\s*$/, '').toUpperCase();
 
             if (normalized === 'BEGIN TRANSACTION' || normalized === 'BEGIN') {
-                if (transactionClient) {
+                const existingClient = transactionStorage.getStore();
+
+                // A transaction is already active in this async execution context.
+                // Do not create a second transaction on the same request.
+                if (existingClient) {
                     callback?.(null);
                     return;
                 }
-                pool.connect().then(client => {
-                    transactionClient = client;
-                    return client.query('BEGIN');
-                }).then(() => callback?.(null))
+
+                pool.connect()
+                    .then(client => {
+                        return client.query('BEGIN')
+                            .then(() => {
+                                // Everything scheduled by the callback now inherits
+                                // this client through AsyncLocalStorage. Other
+                                // concurrent requests get their own transaction.
+                                transactionStorage.run(client, () => {
+                                    callback?.(null);
+                                });
+                            })
+                            .catch(err => {
+                                client.release();
+                                callback?.(err);
+                            });
+                    })
                     .catch(err => {
-                        if (transactionClient) transactionClient.release();
-                        transactionClient = null;
                         callback?.(err);
                     });
+
                 return;
             }
 
             if (normalized === 'COMMIT') {
-                if (!transactionClient) {
+                const client = transactionStorage.getStore();
+
+                if (!client) {
                     callback?.(null);
                     return;
                 }
-                const client = transactionClient;
+
                 client.query('COMMIT')
                     .then(() => {
-                        transactionClient = null;
                         client.release();
                         callback?.(null);
                     })
                     .catch(err => {
-                        transactionClient = null;
-                        client.release();
-                        callback?.(err);
+                        // COMMIT may fail before the transaction is completed.
+                        // Roll back before releasing the client when possible.
+                        client.query('ROLLBACK')
+                            .catch(() => {})
+                            .then(() => {
+                                client.release();
+                                callback?.(err);
+                            });
                     });
+
                 return;
             }
 
             if (normalized === 'ROLLBACK') {
-                if (!transactionClient) {
+                const client = transactionStorage.getStore();
+
+                if (!client) {
                     callback?.(null);
                     return;
                 }
-                const client = transactionClient;
+
                 client.query('ROLLBACK')
                     .then(() => {
-                        transactionClient = null;
                         client.release();
                         callback?.(null);
                     })
                     .catch(err => {
-                        transactionClient = null;
                         client.release();
                         callback?.(err);
                     });
+
                 return;
             }
 
@@ -457,6 +1027,49 @@ const database = {
                 }
             });
         }
+    },
+
+    async installReportFunctions() {
+        await pool.query(REPORT_FUNCTIONS_SQL);
+        console.log('✅ PostgreSQL report functions installed');
+    },
+
+    runReport(reportName, params, callback) {
+        const allowed = new Set([
+            'get_orders_by_total',
+            'get_products_by_total_sales',
+            'get_low_stock_high_demand_products',
+            'get_products_monthly_sales',
+            'get_stores_by_last_calendar_year_revenue',
+            'get_products_never_ordered',
+            'get_products_by_number_of_orders',
+            'get_stores_by_average_review',
+            'get_store_with_highest_revenue_growth',
+            'get_clients_by_number_of_orders',
+            'get_approximate_orders_per_client',
+            'get_clients_without_orders',
+            'get_store_request_statistics',
+            'get_top_10_employees_by_requests_last_month',
+            'get_employees_by_hours_and_pay',
+            'get_stores_average_pay',
+            'get_employee_product_changes_last_month',
+            'get_stores_by_monthly_profit_and_revenue_growth',
+            'get_unapproved_reports'
+        ]);
+
+        if (!allowed.has(reportName)) {
+            callback(new Error('Unknown report: ' + reportName), null);
+            return;
+        }
+
+        const values = Array.isArray(params) ? params : [];
+        const placeholders = values.map((_, index) => '$' + (index + 1)).join(', ');
+
+        dbQuery(
+            `SELECT * FROM ${reportName}(${placeholders})`,
+            values,
+            (err, result) => callback(err, result?.rows || [])
+        );
     },
 
     async initializeDatabase() {
@@ -519,13 +1132,13 @@ const database = {
 
         const schema = `
             CREATE TABLE IF NOT EXISTS category (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(50) NOT NULL,
+                                                    id SERIAL PRIMARY KEY,
+                                                    name VARCHAR(50) NOT NULL,
                 parent_category_id INTEGER REFERENCES category(id) NOT NULL
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS product (
-                code VARCHAR(8) PRIMARY KEY DEFAULT '-1',
+                                                   code VARCHAR(8) PRIMARY KEY DEFAULT '-1',
                 price DECIMAL(10,2) NOT NULL CHECK (price >= 0.0),
                 availability INTEGER NOT NULL,
                 weight DECIMAL(5,2) NOT NULL CHECK (weight > 0),
@@ -533,173 +1146,173 @@ const database = {
                 aprox_production_time INTEGER NOT NULL,
                 description VARCHAR(500) NOT NULL,
                 category_id INTEGER NOT NULL REFERENCES category(id) ON DELETE SET DEFAULT
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS image (
-                product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
+                                                 product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
                 image VARCHAR NOT NULL DEFAULT 'Image NOT found!'
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS color (
-                product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
+                                                 product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
                 color VARCHAR(50)
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS store (
-                store_ID VARCHAR(3) PRIMARY KEY,
+                                                 store_ID VARCHAR(3) PRIMARY KEY,
                 name VARCHAR(50) UNIQUE NOT NULL,
                 date_of_founding DATE NOT NULL,
                 physical_address VARCHAR(100) NOT NULL,
                 store_email VARCHAR(40) UNIQUE NOT NULL CHECK (store_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'),
                 rating DECIMAL(2,1) NOT NULL DEFAULT 0 CHECK (rating>=0.0 AND rating<=5.0)
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS personal (
-                id VARCHAR(10) PRIMARY KEY,
+                                                    id VARCHAR(10) PRIMARY KEY,
                 first_name VARCHAR(20) NOT NULL,
                 last_name VARCHAR(20) NOT NULL,
                 ssn VARCHAR(13) NOT NULL CHECK (ssn ~ '^[0-9]{13}$'),
                 email VARCHAR(50) UNIQUE NOT NULL CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'),
                 password VARCHAR NOT NULL
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS permissions (
-                personal_is VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
+                                                       personal_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
                 type VARCHAR(50) NOT NULL,
                 authorisation VARCHAR(50) NOT NULL
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS boss (
-                boss_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE
-            );
+                                                boss_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE
+                );
 
             CREATE TABLE IF NOT EXISTS employees (
-                employee_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
+                                                     employee_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
                 date_of_hire DATE NOT NULL
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS client (
-                client_ID SERIAL PRIMARY KEY,
-                first_name VARCHAR(50) NOT NULL,
+                                                  client_ID SERIAL PRIMARY KEY,
+                                                  first_name VARCHAR(50) NOT NULL,
                 last_name VARCHAR(50) NOT NULL,
                 email VARCHAR(50) UNIQUE NOT NULL CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'),
                 password VARCHAR NOT NULL
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS delivery_address (
-                client_ID INTEGER PRIMARY KEY REFERENCES client(client_ID) ON DELETE CASCADE,
+                                                            client_ID INTEGER PRIMARY KEY REFERENCES client(client_ID) ON DELETE CASCADE,
                 address VARCHAR(200) NOT NULL,
                 city VARCHAR(30) NOT NULL,
                 postcode VARCHAR(20) NOT NULL,
                 country VARCHAR(40) NOT NULL,
                 is_default BOOLEAN DEFAULT TRUE
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS "order" (
-                order_num VARCHAR(11) PRIMARY KEY,
+                                                   order_num VARCHAR(11) PRIMARY KEY,
                 client_ID INTEGER REFERENCES client(client_ID) ON DELETE CASCADE,
                 status VARCHAR(20) NOT NULL DEFAULT 'placed order',
                 last_date_mod TIMESTAMP NOT NULL,
                 payment_method VARCHAR(250) NOT NULL,
                 discount DECIMAL(5,2) DEFAULT 0.0 CHECK(discount>=0.0 AND discount<=100.00),
                 CONSTRAINT check_status CHECK (status IN ('placed order', 'being processed', 'shipping', 'delivered', 'canceled'))
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS review (
-                order_num VARCHAR(11) PRIMARY KEY REFERENCES "order"(order_num) ON DELETE CASCADE,
+                                                  order_num VARCHAR(11) PRIMARY KEY REFERENCES "order"(order_num) ON DELETE CASCADE,
                 comment VARCHAR(300),
                 rating DECIMAL(2,1) NOT NULL CHECK(rating>=0.0 AND rating<=5.0),
                 last_mod_date TIMESTAMP NOT NULL
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS refund (
-                refund_id SERIAL PRIMARY KEY,
-                order_num VARCHAR(11) REFERENCES "order"(order_num) ON DELETE CASCADE,
+                                                  refund_id SERIAL PRIMARY KEY,
+                                                  order_num VARCHAR(11) REFERENCES "order"(order_num) ON DELETE CASCADE,
                 reason VARCHAR(300),
                 amount DECIMAL(5,2) NOT NULL,
                 status VARCHAR(100) NOT NULL DEFAULT 'requested refund',
-                CONSTRAINT check_refund_status CHECK (status IN ('requested refund', 'being revied', 'approved', 'not approved', 'processed'))
-            );
+                CONSTRAINT check_refund_status CHECK (status IN ('requested refund', 'being reviewed', 'approved', 'not approved', 'processed'))
+                );
 
             CREATE TABLE IF NOT EXISTS report (
-                date TIMESTAMP NOT NULL,
-                store_ID VARCHAR(3) NOT NULL REFERENCES store(store_ID) ON DELETE CASCADE,
+                                                  date TIMESTAMP NOT NULL,
+                                                  store_ID VARCHAR(3) NOT NULL REFERENCES store(store_ID) ON DELETE CASCADE,
                 overall_profit NUMERIC NOT NULL DEFAULT 0.0 CHECK(overall_profit>=0),
                 sales_trend VARCHAR(100) NOT NULL,
                 marketing_growth VARCHAR(100) NOT NULL,
                 owner_signature VARCHAR(50) NOT NULL DEFAULT 'Not signed yet',
                 PRIMARY KEY (date, store_ID)
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS monthly_profit (
-                report_date TIMESTAMP NOT NULL,
-                store_ID VARCHAR(3) NOT NULL,
+                                                          report_date TIMESTAMP NOT NULL,
+                                                          store_ID VARCHAR(3) NOT NULL,
                 month_and_year DATE NOT NULL,
                 profit NUMERIC NOT NULL DEFAULT 0.0,
                 PRIMARY KEY(report_date, store_ID),
                 FOREIGN KEY (report_date, store_ID) REFERENCES report(date, store_ID) ON DELETE CASCADE
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS exchanges_data (
-                report_date TIMESTAMP NOT NULL,
-                store_ID VARCHAR(3) NOT NULL,
+                                                          report_date TIMESTAMP NOT NULL,
+                                                          store_ID VARCHAR(3) NOT NULL,
                 monthly_profit NUMERIC NOT NULL DEFAULT 0.0,
                 date TIMESTAMP NOT NULL,
                 sales NUMERIC NOT NULL DEFAULT 0.0,
                 damages NUMERIC NOT NULL DEFAULT 0.0 CHECK (damages<=0),
                 PRIMARY KEY (report_date, store_ID),
                 FOREIGN KEY (report_date, store_ID) REFERENCES report(date, store_ID) ON DELETE CASCADE
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS request (
-                request_num VARCHAR(14) PRIMARY KEY,
+                                                   request_num VARCHAR(14) PRIMARY KEY,
                 date_and_time TIMESTAMP NOT NULL,
                 problem VARCHAR(300) NOT NULL,
                 notes_of_communication VARCHAR,
                 customer_satisfaction NUMERIC NOT NULL
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS makes_request (
-                client_ID INTEGER NOT NULL REFERENCES client(client_ID) ON DELETE CASCADE,
+                                                         client_ID INTEGER NOT NULL REFERENCES client(client_ID) ON DELETE CASCADE,
                 order_num VARCHAR(11) UNIQUE NOT NULL REFERENCES "order"(order_num) ON DELETE CASCADE,
                 PRIMARY KEY(client_ID, order_num)
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS answers (
-                request_num VARCHAR(14) REFERENCES request(request_num) ON DELETE CASCADE,
+                                                   request_num VARCHAR(14) REFERENCES request(request_num) ON DELETE CASCADE,
                 personal_id VARCHAR(10) NOT NULL REFERENCES personal(id) ON DELETE CASCADE,
                 PRIMARY KEY(request_num, personal_id)
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS for_store (
-                request_num VARCHAR(14) REFERENCES request(request_num) ON DELETE CASCADE,
+                                                     request_num VARCHAR(14) REFERENCES request(request_num) ON DELETE CASCADE,
                 store_ID VARCHAR(3) REFERENCES store(store_ID) ON DELETE CASCADE,
                 PRIMARY KEY(request_num, store_ID)
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS "change" (
-                date_and_time TIMESTAMP NOT NULL,
-                product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
+                                                    date_and_time TIMESTAMP NOT NULL,
+                                                    product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
                 changes VARCHAR NOT NULL,
                 PRIMARY KEY (date_and_time, product_code)
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS makes_change (
-                personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
+                                                        personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
                 change_date_time TIMESTAMP,
                 product_code VARCHAR(8),
                 PRIMARY KEY(personal_id, change_date_time, product_code),
                 FOREIGN KEY(change_date_time, product_code) REFERENCES "change"(date_and_time, product_code) ON DELETE CASCADE
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS works_in_store (
-                personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
+                                                          personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
                 store_ID VARCHAR(3) REFERENCES store(store_ID) ON DELETE CASCADE,
                 PRIMARY KEY(personal_id, store_ID)
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS worked (
-                personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
+                                                  personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
                 report_date TIMESTAMP,
                 store_ID VARCHAR(3),
                 wage NUMERIC NOT NULL CHECK (wage>=0),
@@ -709,65 +1322,65 @@ const database = {
                 PRIMARY KEY (personal_id, report_date, store_ID),
                 FOREIGN KEY (report_date, store_ID) REFERENCES report(date, store_ID) ON DELETE CASCADE,
                 CONSTRAINT check_pay_method CHECK (pay_method IN ('full_time', 'part-time', 'custom'))
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS sells (
-                product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
+                                                 product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
                 store_ID VARCHAR(3) REFERENCES store(store_ID) ON DELETE CASCADE,
                 discount NUMERIC NOT NULL DEFAULT 0.0,
                 PRIMARY KEY (product_code, store_ID)
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS includes (
-                order_num VARCHAR(11) REFERENCES "order"(order_num) ON DELETE CASCADE,
+                                                    order_num VARCHAR(11) REFERENCES "order"(order_num) ON DELETE CASCADE,
                 product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
                 quantity INTEGER NOT NULL CHECK(quantity>=0),
                 PRIMARY KEY (order_num, product_code)
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS approves (
-                boss_id VARCHAR(10) REFERENCES boss(boss_id) ON DELETE CASCADE,
+                                                    boss_id VARCHAR(10) REFERENCES boss(boss_id) ON DELETE CASCADE,
                 report_date TIMESTAMP,
                 store_ID VARCHAR(3),
                 owner_signature VARCHAR NOT NULL,
                 PRIMARY KEY (boss_id, report_date, store_ID),
                 FOREIGN KEY (report_date, store_ID) REFERENCES report(date, store_ID) ON DELETE CASCADE
-            );
+                );
 
             -- These four small tables are application authentication/audit storage.
             -- They do not modify any of the project tables above.
             CREATE TABLE IF NOT EXISTS users (
-                id VARCHAR(50) PRIMARY KEY,
+                                                 id VARCHAR(50) PRIMARY KEY,
                 username VARCHAR(100) UNIQUE NOT NULL,
                 email VARCHAR(255) UNIQUE NOT NULL,
                 password VARCHAR(255) NOT NULL,
                 user_type VARCHAR(50) NOT NULL,
                 force_password_change BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS roles (
-                role_id SERIAL PRIMARY KEY,
-                name VARCHAR(50) UNIQUE NOT NULL,
+                                                 role_id SERIAL PRIMARY KEY,
+                                                 name VARCHAR(50) UNIQUE NOT NULL,
                 description TEXT
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS user_roles (
-                user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+                                                      user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
                 role_id INTEGER REFERENCES roles(role_id) ON DELETE CASCADE,
                 PRIMARY KEY(user_id, role_id)
-            );
+                );
 
             CREATE TABLE IF NOT EXISTS audit_log (
-                log_id BIGSERIAL PRIMARY KEY,
-                user_id VARCHAR(50),
+                                                     log_id BIGSERIAL PRIMARY KEY,
+                                                     user_id VARCHAR(50),
                 action VARCHAR(100) NOT NULL,
                 resource_type VARCHAR(50),
                 resource_id VARCHAR(50),
                 details TEXT,
                 ip_address VARCHAR(45),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
+                );
 
             CREATE INDEX IF NOT EXISTS idx_product_category ON product(category_id);
             CREATE INDEX IF NOT EXISTS idx_order_client ON "order"(client_ID);
@@ -782,6 +1395,162 @@ const database = {
         `;
 
         await pool.query(schema);
+
+        // ------------------------------------------------------------
+        // Compatibility migration for older PostgreSQL databases.
+        //
+        // Some existing project databases contain a permissions table
+        // created by an older version of the schema with a typo such as
+        // personal_is instead of personal_id. CREATE TABLE IF NOT EXISTS cannot add
+        // missing columns to an existing table, so the admin bootstrap
+        // INSERT would otherwise fail with PostgreSQL error 42703.
+        //
+        // The migration is intentionally non-destructive: it keeps all
+        // existing rows, renames the typo when possible, and migrates the old typo column into the expected schema without deleting
+        // permission values.
+        // ------------------------------------------------------------
+        await pool.query(`
+            DO $$
+            BEGIN
+                -- Some older versions of the database used the typo
+                -- personal_is instead of personal_id. Rename it rather
+                -- than adding a second column: the old column may be NOT NULL
+                -- and would otherwise make the admin bootstrap INSERT fail.
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'permissions'
+                      AND column_name = 'personal_is'
+                ) AND NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'permissions'
+                      AND column_name = 'personal_id'
+                ) THEN
+                    ALTER TABLE permissions
+                        RENAME COLUMN personal_is TO personal_id;
+                END IF;
+
+                -- If neither spelling exists, add the expected column.
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'permissions'
+                      AND column_name = 'personal_id'
+                ) THEN
+                    ALTER TABLE permissions
+                        ADD COLUMN personal_id VARCHAR(10);
+                END IF;
+
+                -- Some databases were already partially migrated and therefore
+                -- contain BOTH personal_is and personal_id. If the old typo
+                -- column participates in the primary key, PostgreSQL will not
+                -- allow us to drop its NOT NULL requirement. Migrate the
+                -- primary-key data to personal_id first, then remove the old
+                -- typo column from the key and drop it.
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'permissions'
+                      AND column_name = 'personal_is'
+                ) AND EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'permissions'
+                      AND column_name = 'personal_id'
+                ) THEN
+                    -- Copy old primary-key values into the new column where
+                    -- the new column is currently empty.
+                    UPDATE permissions
+                    SET personal_id = personal_is
+                    WHERE personal_id IS NULL
+                      AND personal_is IS NOT NULL;
+
+                    -- Remove the old typo column from the primary key.
+                    DO $drop_old_permission_pk$
+                    DECLARE
+                        pk_name TEXT;
+                    BEGIN
+                        SELECT tc.constraint_name
+                        INTO pk_name
+                        FROM information_schema.table_constraints tc
+                        JOIN information_schema.key_column_usage kcu
+                          ON kcu.constraint_name = tc.constraint_name
+                         AND kcu.table_schema = tc.table_schema
+                         AND kcu.table_name = tc.table_name
+                        WHERE tc.table_schema = 'public'
+                          AND tc.table_name = 'permissions'
+                          AND tc.constraint_type = 'PRIMARY KEY'
+                          AND kcu.column_name = 'personal_is'
+                        LIMIT 1;
+
+                        IF pk_name IS NOT NULL THEN
+                            EXECUTE format(
+                                'ALTER TABLE permissions DROP CONSTRAINT %I',
+                                pk_name
+                            );
+                        END IF;
+                    END
+                    $drop_old_permission_pk$;
+
+                    -- The application uses personal_id as the primary key.
+                    -- Drop the obsolete typo column after preserving its data.
+                    ALTER TABLE permissions
+                        DROP COLUMN personal_is;
+
+                    -- Recreate the primary key on the correct column if one
+                    -- was removed above and no primary key currently exists.
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM information_schema.table_constraints
+                        WHERE table_schema = 'public'
+                          AND table_name = 'permissions'
+                          AND constraint_type = 'PRIMARY KEY'
+                    ) THEN
+                        ALTER TABLE permissions
+                            ADD PRIMARY KEY (personal_id);
+                    END IF;
+                END IF;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'permissions'
+                      AND column_name = 'type'
+                ) THEN
+                    ALTER TABLE permissions
+                        ADD COLUMN type VARCHAR(50);
+                END IF;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'permissions'
+                      AND column_name = 'authorisation'
+                ) THEN
+                    ALTER TABLE permissions
+                        ADD COLUMN authorisation VARCHAR(50);
+                END IF;
+            END
+            $$;
+        `);
+
+        // ON CONFLICT(personal_id) requires a unique/exclusion constraint
+        // that PostgreSQL can use for conflict inference. A unique index
+        // permits multiple NULL values, so this remains safe for any legacy
+        // permission rows that do not have a personal_id yet.
+        await pool.query(`
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                permissions_personal_id_unique
+                ON permissions(personal_id)
+        `);
 
         const roles = [
             ['admin', 'System administrator'],
@@ -811,8 +1580,8 @@ const database = {
         );
         await pool.query(`INSERT INTO boss(boss_id) VALUES('000000') ON CONFLICT(boss_id) DO NOTHING`);
         await pool.query(
-            `INSERT INTO permissions(personal_is,type,authorisation)
-             VALUES('000000','ADMIN','full_access') ON CONFLICT(personal_is) DO NOTHING`
+            `INSERT INTO permissions(personal_id,type,authorisation)
+             VALUES('000000','ADMIN','full_access') ON CONFLICT(personal_id) DO NOTHING`
         );
         await pool.query(
             `INSERT INTO user_roles(user_id,role_id)
@@ -831,8 +1600,8 @@ const database = {
                     COALESCE(json_agg(json_build_object('name',r.name,'description',r.description))
                              FILTER (WHERE r.role_id IS NOT NULL), '[]') AS roles
              FROM users u
-             LEFT JOIN user_roles ur ON ur.user_id=u.id
-             LEFT JOIN roles r ON r.role_id=ur.role_id
+                      LEFT JOIN user_roles ur ON ur.user_id=u.id
+                      LEFT JOIN roles r ON r.role_id=ur.role_id
              WHERE u.id=$1
              GROUP BY u.id`,
             [String(id)],
@@ -846,11 +1615,11 @@ const database = {
                     COALESCE(json_agg(json_build_object('name',r.name,'description',r.description))
                              FILTER (WHERE r.role_id IS NOT NULL), '[]') AS roles
              FROM users u
-             LEFT JOIN user_roles ur ON ur.user_id=u.id
-             LEFT JOIN roles r ON r.role_id=ur.role_id
+                      LEFT JOIN user_roles ur ON ur.user_id=u.id
+                      LEFT JOIN roles r ON r.role_id=ur.role_id
              WHERE u.username=$1 OR u.email=$1
              GROUP BY u.id
-             LIMIT 1`,
+                 LIMIT 1`,
             [username],
             (err, result) => callback(err, result?.rows?.[0])
         );
@@ -936,8 +1705,8 @@ const database = {
         }
         const sql = `SELECT p.*, c.name AS category_name, LEFT(p.code,3) AS store_id
                      FROM product p
-                     LEFT JOIN category c ON c.id=p.category_id
-                     ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+                         LEFT JOIN category c ON c.id=p.category_id
+                         ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
                      ORDER BY p.code`;
         dbQuery(sql, params, (err, result) => callback(err, result?.rows || []));
     },
@@ -946,7 +1715,7 @@ const database = {
         dbQuery(
             `SELECT p.*, c.name AS category_name, LEFT(p.code,3) AS store_id
              FROM product p
-             LEFT JOIN category c ON c.id=p.category_id
+                 LEFT JOIN category c ON c.id=p.category_id
              WHERE p.code=$1 LIMIT 1`,
             [String(id)],
             (err,result)=>callback(err,result?.rows?.[0])
@@ -957,7 +1726,7 @@ const database = {
         dbQuery(
             `SELECT p.*, c.name AS category_name, LEFT(p.code,3) AS store_id
              FROM product p
-             LEFT JOIN category c ON c.id=p.category_id
+                 LEFT JOIN category c ON c.id=p.category_id
              WHERE p.code=$1`,
             [code],
             (err,result)=>callback(err,result?.rows?.[0])
@@ -984,7 +1753,7 @@ const database = {
                 dbQuery(
                     `INSERT INTO sells(product_code,store_ID,discount)
                      VALUES($1,$2,$3)
-                     ON CONFLICT(product_code,store_ID)
+                         ON CONFLICT(product_code,store_ID)
                      DO UPDATE SET discount=EXCLUDED.discount`,
                     [data.code,storeId,data.discount || 0],
                     e => callback(e, data.code)
@@ -1091,12 +1860,12 @@ const database = {
     getOrdersByClient(clientId, callback) {
         dbQuery(
             `SELECT o.*, LEFT(o.order_num,3) AS store_id,
-                    o.last_date_mod AS order_date,
-                    COALESCE(json_agg(json_build_object('product_code',i.product_code,'quantity',i.quantity,'price',p.price))
-                             FILTER(WHERE i.product_code IS NOT NULL),'[]') AS items
+                 o.last_date_mod AS order_date,
+                 COALESCE(json_agg(json_build_object('product_code',i.product_code,'quantity',i.quantity,'price',p.price))
+                 FILTER(WHERE i.product_code IS NOT NULL),'[]') AS items
              FROM "order" o
-             LEFT JOIN includes i ON i.order_num=o.order_num
-             LEFT JOIN product p ON p.code=i.product_code
+                 LEFT JOIN includes i ON i.order_num=o.order_num
+                 LEFT JOIN product p ON p.code=i.product_code
              WHERE o.client_ID=$1
              GROUP BY o.order_num
              ORDER BY o.last_date_mod DESC`,
@@ -1108,7 +1877,7 @@ const database = {
         dbQuery(
             `INSERT INTO review(order_num,comment,rating,last_mod_date)
              VALUES($1,$2,$3,CURRENT_TIMESTAMP)
-             RETURNING order_num`,
+                 RETURNING order_num`,
             [data.order_num,data.comment||null,data.rating],
             (err,result)=>callback(err,result?.rows?.[0]?.order_num)
         );
@@ -1161,9 +1930,9 @@ const database = {
 
     getAllOrders(callback) {
         dbQuery(`SELECT o.*, LEFT(o.order_num,3) AS store_id, o.last_date_mod AS order_date,
-                        c.first_name,c.last_name,c.email
+                     c.first_name,c.last_name,c.email
                  FROM "order" o
-                 LEFT JOIN client c ON c.client_id=o.client_ID
+                     LEFT JOIN client c ON c.client_id=o.client_ID
                  ORDER BY o.last_date_mod DESC`,
             [],(err,result)=>callback(err,result?.rows||[]));
     },
@@ -1171,8 +1940,8 @@ const database = {
     getStoreProducts(storeId, callback) {
         dbQuery(`SELECT p.*,c.name AS category_name,LEFT(p.code,3) AS store_id,s.discount
                  FROM product p
-                 LEFT JOIN category c ON c.id=p.category_id
-                 LEFT JOIN sells s ON s.product_code=p.code AND s.store_ID=$1
+                     LEFT JOIN category c ON c.id=p.category_id
+                     LEFT JOIN sells s ON s.product_code=p.code AND s.store_ID=$1
                  WHERE LEFT(p.code,3)=$1 OR EXISTS(SELECT 1 FROM sells sx WHERE sx.product_code=p.code AND sx.store_ID=$1)
                  ORDER BY p.code`,[storeId],(err,result)=>callback(err,result?.rows||[]));
     },
@@ -1180,7 +1949,7 @@ const database = {
     getStoreOrders(storeId, callback) {
         dbQuery(`SELECT o.*,LEFT(o.order_num,3) AS store_id,o.last_date_mod AS order_date,c.first_name,c.last_name
                  FROM "order" o
-                 LEFT JOIN client c ON c.client_id=o.client_ID
+                     LEFT JOIN client c ON c.client_id=o.client_ID
                  WHERE LEFT(o.order_num,3)=$1 ORDER BY o.last_date_mod DESC`,[storeId],
             (err,result)=>callback(err,result?.rows||[]));
     },
@@ -1188,35 +1957,184 @@ const database = {
     getStoreEmployees(storeId, callback) {
         dbQuery(`SELECT p.*,e.date_of_hire,per.type,per.authorisation
                  FROM personal p JOIN works_in_store w ON w.personal_id=p.id
-                 LEFT JOIN employees e ON e.employee_id=p.id
-                 LEFT JOIN permissions per ON per.personal_is=p.id
+                                 LEFT JOIN employees e ON e.employee_id=p.id
+                                 LEFT JOIN permissions per ON per.personal_id=p.id
                  WHERE w.store_ID=$1 ORDER BY p.last_name,p.first_name`,
             [storeId],(err,result)=>callback(err,result?.rows||[]));
     },
 
     getStoreReports(storeId, callback) {
-        dbQuery(`SELECT * FROM report WHERE store_ID=$1 ORDER BY date DESC`,[storeId],
-            (err,result)=>callback(err,result?.rows||[]));
+        dbQuery(
+            `SELECT date, store_id, overall_profit, sales_trend, marketing_growth, owner_signature
+             FROM report
+             WHERE store_id = $1
+             ORDER BY date DESC`,
+            [storeId],
+            (err, result) => callback(err, result?.rows || [])
+        );
     },
 
     getStoreStats(storeId, callback) {
-        const sql=`SELECT
-            (SELECT COUNT(*) FROM product WHERE LEFT(code,3)=$1)::int AS product_count,
-            (SELECT COUNT(*) FROM "order" WHERE LEFT(order_num,3)=$1)::int AS order_count,
-            (SELECT COALESCE(SUM(i.quantity*p.price*(1-o.discount/100)),0)
-             FROM "order" o JOIN includes i ON i.order_num=o.order_num JOIN product p ON p.code=i.product_code
-             WHERE LEFT(o.order_num,3)=$1) AS revenue,
-            (SELECT COUNT(*) FROM works_in_store WHERE store_ID=$1)::int AS employee_count,
-            (SELECT COUNT(*) FROM for_store WHERE store_ID=$1)::int AS request_count,
-            (SELECT COUNT(*) FROM refund r JOIN "order" o ON o.order_num=r.order_num WHERE LEFT(o.order_num,3)=$1)::int AS refund_count`;
-        dbQuery(sql,[storeId],(err,result)=>callback(err,result?.rows?.[0]||{}));
+        const sql = `
+            SELECT
+                (SELECT COUNT(DISTINCT product_code)
+                 FROM sells
+                 WHERE store_ID = $1)::int AS product_count,
+
+                    (SELECT COUNT(DISTINCT o.order_num)
+                     FROM sells se
+                              JOIN includes i ON i.product_code = se.product_code
+                              JOIN "order" o ON o.order_num = i.order_num
+                     WHERE se.store_ID = $1)::int AS order_count,
+
+                    (SELECT COALESCE(SUM(
+                                             i.quantity * p.price
+                                                 * (1 - COALESCE(o.discount, 0) / 100.0)
+                                     ), 0)
+                     FROM sells se
+                              JOIN includes i ON i.product_code = se.product_code
+                              JOIN "order" o ON o.order_num = i.order_num
+                              JOIN product p ON p.code = i.product_code
+                     WHERE se.store_ID = $1) AS revenue,
+
+                (SELECT COUNT(*)
+                 FROM works_in_store
+                 WHERE store_ID = $1)::int AS employee_count,
+
+                    (SELECT COUNT(*)
+                     FROM for_store
+                     WHERE store_ID = $1)::int AS request_count,
+
+                    (SELECT COUNT(*)
+                     FROM refund r
+                              JOIN "order" o ON o.order_num = r.order_num
+                     WHERE LEFT(o.order_num, 3) = $1)::int AS refund_count
+        `;
+
+        dbQuery(sql, [storeId], (err, result) => {
+            callback(err, result?.rows?.[0] || {});
+        });
+    },
+
+    generateStoreReport(storeId, startDate, endDate, type, period, ownerSignature, callback) {
+        dbQuery(
+            `WITH sales AS (
+                SELECT COALESCE(SUM(
+                                        p.price * i.quantity
+                                            * (1 - COALESCE(o.discount, 0) / 100.0)
+                                ), 0) AS revenue
+                FROM sells se
+                         JOIN product p ON p.code = se.product_code
+                         JOIN includes i ON i.product_code = se.product_code
+                         JOIN "order" o ON o.order_num = i.order_num
+                WHERE se.store_ID = $1
+                  AND o.last_date_mod >= $2::timestamp
+                 AND o.last_date_mod < ($3::timestamp + INTERVAL '1 day')
+                 ),
+                 refunds AS (
+             SELECT COALESCE(SUM(rf.amount), 0) AS refund_total
+             FROM refund rf
+                 JOIN "order" o ON o.order_num = rf.order_num
+             WHERE LEFT(o.order_num, 3) = $1
+               AND o.last_date_mod >= $2::timestamp
+               AND o.last_date_mod < ($3::timestamp + INTERVAL '1 day')
+               AND rf.status IN ('approved', 'processed')
+                 )
+            SELECT sales.revenue, refunds.refund_total,
+                   sales.revenue - refunds.refund_total AS net_profit
+            FROM sales CROSS JOIN refunds`,
+            [storeId, startDate, endDate],
+            (err, result) => {
+                if (err) return callback(err);
+
+                const row = result.rows[0] || {};
+                const revenue = Number(row.revenue || 0);
+                const refundTotal = Number(row.refund_total || 0);
+                const netProfit = Number(row.net_profit || 0);
+
+                dbQuery(
+                    `SELECT COALESCE(SUM(
+                                             p.price * i.quantity
+                                                 * (1 - COALESCE(o.discount, 0) / 100.0)
+                                     ), 0) AS previous_revenue
+                     FROM sells se
+                              JOIN product p ON p.code = se.product_code
+                              JOIN includes i ON i.product_code = se.product_code
+                              JOIN "order" o ON o.order_num = i.order_num
+                     WHERE se.store_ID = $1
+                       AND o.last_date_mod >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month'
+                       AND o.last_date_mod < DATE_TRUNC('month', CURRENT_DATE)`,
+                    [storeId],
+                    (previousErr, previousResult) => {
+                        if (previousErr) return callback(previousErr);
+
+                        const previousRevenue = Number(previousResult.rows[0]?.previous_revenue || 0);
+                        const growth = previousRevenue === 0
+                            ? (revenue > 0 ? 100 : 0)
+                            : ((revenue - previousRevenue) / previousRevenue) * 100;
+
+                        dbQuery(
+                            `INSERT INTO report
+                             (date, store_ID, overall_profit, sales_trend, marketing_growth, owner_signature)
+                             VALUES
+                                 (CURRENT_TIMESTAMP, $1, $2, $3, $4, $5)
+                                 RETURNING date, store_ID, overall_profit, sales_trend, marketing_growth, owner_signature`,
+                            [
+                                storeId,
+                                Math.max(0, netProfit),
+                                `Revenue ${revenue.toFixed(2)}; Refunds ${refundTotal.toFixed(2)}`.slice(0, 100),
+                                `${growth.toFixed(2)}%`,
+                                ownerSignature || 'Not signed yet'
+                            ],
+                            (insertErr, insertResult) => {
+                                if (insertErr) return callback(insertErr);
+
+                                const report = insertResult.rows[0];
+
+                                dbQuery(
+                                    `INSERT INTO monthly_profit
+                                         (report_date, store_ID, month_and_year, profit)
+                                     VALUES
+                                         ($1, $2, DATE_TRUNC('month', $3::timestamp)::DATE, $4)
+                                         ON CONFLICT (report_date, store_ID)
+                                     DO UPDATE SET
+                                        month_and_year = EXCLUDED.month_and_year,
+                                                                                     profit = EXCLUDED.profit`,
+                                    [report.date, storeId, endDate, Math.max(0, netProfit)],
+                                    (monthlyErr) => {
+                                        if (monthlyErr) console.error('Warning inserting monthly profit:', monthlyErr);
+
+                                        dbQuery(
+                                            `INSERT INTO exchanges_data
+                                                 (report_date, store_ID, monthly_profit, date, sales, damages)
+                                             VALUES ($1, $2, $3, CURRENT_TIMESTAMP, $4, $5)
+                                                 ON CONFLICT (report_date, store_ID)
+                                             DO UPDATE SET
+                                                monthly_profit = EXCLUDED.monthly_profit,
+                                                                                                     date = EXCLUDED.date,
+                                                                                                     sales = EXCLUDED.sales,
+                                                                                                     damages = EXCLUDED.damages`,
+                                            [report.date, storeId, Math.max(0, netProfit), revenue, -refundTotal],
+                                            (exchangeErr) => {
+                                                if (exchangeErr) console.error('Warning inserting exchange data:', exchangeErr);
+                                                callback(null, report);
+                                            }
+                                        );
+                                    }
+                                );
+                            }
+                        );
+                    }
+                );
+            }
+        );
     },
 
     getEmployeeTasks(personalId, storeId, callback) {
         dbQuery(`SELECT r.*,a.personal_id AS answered_by
                  FROM request r
-                 JOIN for_store fs ON fs.request_num=r.request_num
-                 LEFT JOIN answers a ON a.request_num=r.request_num
+                          JOIN for_store fs ON fs.request_num=r.request_num
+                          LEFT JOIN answers a ON a.request_num=r.request_num
                  WHERE fs.store_ID=$1 AND (a.personal_id=$2 OR a.personal_id IS NULL)
                  ORDER BY r.date_and_time DESC`,
             [storeId,personalId],(err,result)=>callback(err,result?.rows||[]));
@@ -1224,10 +2142,10 @@ const database = {
 
     getClientStats(clientId, callback) {
         dbQuery(`SELECT
-            (SELECT COUNT(*) FROM "order" WHERE client_ID=$1)::int AS order_count,
-            (SELECT COUNT(*) FROM review r JOIN "order" o ON o.order_num=r.order_num WHERE o.client_ID=$1)::int AS review_count,
-            (SELECT COUNT(*) FROM makes_request WHERE client_ID=$1)::int AS request_count,
-            (SELECT COUNT(*) FROM refund r JOIN "order" o ON o.order_num=r.order_num WHERE o.client_ID=$1)::int AS refund_count`,
+                         (SELECT COUNT(*) FROM "order" WHERE client_ID=$1)::int AS order_count,
+                         (SELECT COUNT(*) FROM review r JOIN "order" o ON o.order_num=r.order_num WHERE o.client_ID=$1)::int AS review_count,
+                         (SELECT COUNT(*) FROM makes_request WHERE client_ID=$1)::int AS request_count,
+                         (SELECT COUNT(*) FROM refund r JOIN "order" o ON o.order_num=r.order_num WHERE o.client_ID=$1)::int AS refund_count`,
             [clientId],(err,result)=>callback(err,result?.rows?.[0]||{}));
     }
 };
@@ -1242,6 +2160,7 @@ const database = {
 (async () => {
     try {
         await database.initializeDatabase();
+        await database.installReportFunctions();
         console.log('✅ Database initialization completed');
     } catch (err) {
         console.error('❌ Database initialization failed:', err);
@@ -4767,6 +5686,58 @@ const server = http.createServer((req, res) => {
         });
     }
 
+    else if (pathname === '/api/advanced-reports' && req.method === 'GET') {
+        requireRole('admin')(req, res, () => {
+            const reportName = parsedUrl.query.report;
+
+            if (!reportName) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    success: false,
+                    message: 'The report query parameter is required'
+                }));
+                return;
+            }
+
+            let params = [];
+
+            if (reportName === 'get_low_stock_high_demand_products') {
+                const stockThreshold = Number(parsedUrl.query.stockThreshold ?? 5);
+                const demandThreshold = Number(parsedUrl.query.demandThreshold ?? 5);
+
+                if (!Number.isInteger(stockThreshold) || !Number.isInteger(demandThreshold)) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({
+                        success: false,
+                        message: 'stockThreshold and demandThreshold must be integers'
+                    }));
+                    return;
+                }
+
+                params = [stockThreshold, demandThreshold];
+            }
+
+            database.runReport(reportName, params, (err, rows) => {
+                if (err) {
+                    console.error('Error executing report:', err);
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({
+                        success: false,
+                        message: 'Error executing report: ' + err.message
+                    }));
+                    return;
+                }
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    success: true,
+                    report: reportName,
+                    rows
+                }));
+            });
+        });
+    }
+
     else if (pathname === '/api/employee-tasks' && req.method === 'GET') {
         requireAuth(req, res, (userId) => {
             const userIdStr = String(userId);
@@ -4901,15 +5872,40 @@ const server = http.createServer((req, res) => {
     else if (pathname === '/api/generate-report' && req.method === 'POST') {
         requireStoreOwner()(req, res, (personalId) => {
             let body = '';
+
             req.on('data', chunk => {
                 body += chunk.toString();
             });
+
             req.on('end', () => {
-                const { storeId, period, startDate, endDate, type } = JSON.parse(body);
+                let data;
+
+                try {
+                    data = JSON.parse(body);
+                } catch (err) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({
+                        success: false,
+                        message: 'Invalid JSON request body'
+                    }));
+                    return;
+                }
+
+                const {
+                    storeId,
+                    period,
+                    startDate,
+                    endDate,
+                    type,
+                    ownerSignature
+                } = data;
 
                 if (!storeId || !period || !startDate || !endDate || !type) {
                     res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ success: false, message: 'All fields are required' }));
+                    res.end(JSON.stringify({
+                        success: false,
+                        message: 'All fields are required'
+                    }));
                     return;
                 }
 
@@ -4919,40 +5915,64 @@ const server = http.createServer((req, res) => {
                     (err, ownsStore) => {
                         if (err || !ownsStore) {
                             res.writeHead(403, { 'Content-Type': 'application/json' });
-                            res.end(JSON.stringify({ success: false, message: 'You are not authorized to generate reports for this store' }));
+                            res.end(JSON.stringify({
+                                success: false,
+                                message: 'You are not authorized to generate reports for this store'
+                            }));
                             return;
                         }
 
-                        const reportId = 'RPT' + Date.now().toString().slice(-6);
-
-                        database.database.run(
-                            'INSERT INTO report (date, store_ID, overall_profit, sales_trend, marketing_growth, owner_signature) VALUES (CURRENT_TIMESTAMP, $1, 0, $2, $3, $4)',
-                            [storeId, period, type, 'Not signed yet'],
-                            function(err) {
-                                if (err) {
-                                    console.error('Error generating report:', err);
+                        database.generateStoreReport(
+                            storeId,
+                            startDate,
+                            endDate,
+                            type,
+                            period,
+                            ownerSignature,
+                            (reportErr, report) => {
+                                if (reportErr) {
+                                    console.error('Error generating report:', reportErr);
                                     res.writeHead(500, { 'Content-Type': 'application/json' });
-                                    res.end(JSON.stringify({ success: false, message: 'Error generating report: ' + err.message }));
-                                } else {
-                                    database.logAudit(personalId, 'REPORT_GENERATED', 'report', reportId, `Report generated: ${type} for ${period}`, ipAddress);
-
-                                    res.writeHead(200, { 'Content-Type': 'application/json' });
                                     res.end(JSON.stringify({
-                                        success: true,
-                                        message: 'Report generated successfully',
-                                        reportId: reportId,
-                                        report: {
-                                            id: reportId,
-                                            storeId: storeId,
-                                            period: period,
-                                            startDate: startDate,
-                                            endDate: endDate,
-                                            type: type,
-                                            generatedBy: personalId,
-                                            generatedAt: new Date().toISOString()
-                                        }
+                                        success: false,
+                                        message: 'Error generating report: ' + reportErr.message
                                     }));
+                                    return;
                                 }
+
+                                const reportId =
+                                    'RPT' +
+                                    new Date(report.date).getTime().toString().slice(-6);
+
+                                database.logAudit(
+                                    personalId,
+                                    'REPORT_GENERATED',
+                                    'report',
+                                    reportId,
+                                    `Report generated: ${type} for ${period}`,
+                                    ipAddress
+                                );
+
+                                res.writeHead(200, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({
+                                    success: true,
+                                    message: 'Report generated successfully',
+                                    reportId,
+                                    report: {
+                                        id: reportId,
+                                        storeId: report.store_id,
+                                        period,
+                                        startDate,
+                                        endDate,
+                                        type,
+                                        generatedBy: personalId,
+                                        generatedAt: report.date,
+                                        overallProfit: report.overall_profit,
+                                        salesTrend: report.sales_trend,
+                                        marketingGrowth: report.marketing_growth,
+                                        ownerSignature: report.owner_signature
+                                    }
+                                }));
                             }
                         );
                     }
