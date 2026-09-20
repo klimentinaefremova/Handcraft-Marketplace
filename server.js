@@ -24,7 +24,11 @@ let emailTransporter;
 if (process.env.SMTP_USER && process.env.SMTP_PASS) {
     const emailConfig = {
         host: process.env.SMTP_HOST || 'smtp.gmail.com',
-        port: parseInt(process.env.SMTP_PORT) || 587,
+        port: (() => {
+            const configuredPort = parseInt(process.env.SMTP_PORT, 10);
+            if (process.env.SMTP_HOST === 'smtp.ethereal.email' && configuredPort === 3000) return 587;
+            return configuredPort || 587;
+        })(),
         secure: false,
         auth: {
             user: process.env.SMTP_USER,
@@ -168,7 +172,7 @@ function sendStoreRegistrationEmail(toEmail, code, storeName) {
 function generateVerificationCode() {
     let code = '';
     for(let i = 0; i < 6; i++) {
-        code += crypto.randomInt(0, 9);
+        code += crypto.randomInt(0, 10);
     }
     return code;
 }
@@ -385,7 +389,8 @@ const database = {
                 callback = params;
                 params = [];
             }
-            const normalized = String(sql).trim().toUpperCase();
+            const normalized = String(sql).trim().replace(/;\s*$/, '').toUpperCase();
+
             if (normalized === 'BEGIN TRANSACTION' || normalized === 'BEGIN') {
                 if (transactionClient) {
                     callback?.(null);
@@ -402,6 +407,7 @@ const database = {
                     });
                 return;
             }
+
             if (normalized === 'COMMIT') {
                 if (!transactionClient) {
                     callback?.(null);
@@ -421,6 +427,7 @@ const database = {
                     });
                 return;
             }
+
             if (normalized === 'ROLLBACK') {
                 if (!transactionClient) {
                     callback?.(null);
@@ -440,6 +447,7 @@ const database = {
                     });
                 return;
             }
+
             dbQuery(sql, params || [], (err, result) => {
                 if (callback) {
                     callback.call(
@@ -452,264 +460,329 @@ const database = {
     },
 
     async initializeDatabase() {
-        const schema = `
+        // The database supplied by the project is authoritative.  Existing tables
+        // are removed before recreation so an old incompatible schema can never
+        // survive a restart and cause CREATE TABLE IF NOT EXISTS to skip columns.
+        const schemaCompatibility = await pool.query(`
+            SELECT
+                EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='product') AS product_exists,
+                EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='product' AND column_name='category_id') AS product_has_category,
+                EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='product' AND column_name='store_id') AS product_has_store,
+                EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='order' AND column_name='store_id') AS order_has_store,
+                EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='request' AND column_name='store_id') AS request_has_store,
+                EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='review' AND column_name='review_id') AS review_has_review_id,
+                EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='refund' AND column_name='request_date') AS refund_has_request_date
+        `);
 
+        const c = schemaCompatibility.rows[0];
+        const forceReset = String(process.env.RESET_DATABASE || '').toLowerCase() === 'true' || process.env.RESET_DATABASE === '1';
+        const schemaMismatch = !c.product_exists || !c.product_has_category || c.product_has_store || c.order_has_store || c.request_has_store || c.review_has_review_id || c.refund_has_request_date;
+        const resetDatabase = forceReset || schemaMismatch;
+
+        if (resetDatabase) {
+            console.log('🧹 Existing PostgreSQL schema is incompatible with the project schema. Recreating project tables...');
+            await pool.query(`
+                DROP TABLE IF EXISTS audit_log CASCADE;
+                DROP TABLE IF EXISTS user_roles CASCADE;
+                DROP TABLE IF EXISTS roles CASCADE;
+                DROP TABLE IF EXISTS users CASCADE;
+                DROP TABLE IF EXISTS approves CASCADE;
+                DROP TABLE IF EXISTS includes CASCADE;
+                DROP TABLE IF EXISTS sells CASCADE;
+                DROP TABLE IF EXISTS worked CASCADE;
+                DROP TABLE IF EXISTS works_in_store CASCADE;
+                DROP TABLE IF EXISTS makes_change CASCADE;
+                DROP TABLE IF EXISTS "change" CASCADE;
+                DROP TABLE IF EXISTS for_store CASCADE;
+                DROP TABLE IF EXISTS answers CASCADE;
+                DROP TABLE IF EXISTS makes_request CASCADE;
+                DROP TABLE IF EXISTS request CASCADE;
+                DROP TABLE IF EXISTS exchanges_data CASCADE;
+                DROP TABLE IF EXISTS monthly_profit CASCADE;
+                DROP TABLE IF EXISTS report CASCADE;
+                DROP TABLE IF EXISTS refund CASCADE;
+                DROP TABLE IF EXISTS review CASCADE;
+                DROP TABLE IF EXISTS "order" CASCADE;
+                DROP TABLE IF EXISTS delivery_address CASCADE;
+                DROP TABLE IF EXISTS client CASCADE;
+                DROP TABLE IF EXISTS employees CASCADE;
+                DROP TABLE IF EXISTS boss CASCADE;
+                DROP TABLE IF EXISTS permissions CASCADE;
+                DROP TABLE IF EXISTS personal CASCADE;
+                DROP TABLE IF EXISTS color CASCADE;
+                DROP TABLE IF EXISTS image CASCADE;
+                DROP TABLE IF EXISTS product CASCADE;
+                DROP TABLE IF EXISTS store CASCADE;
+                DROP TABLE IF EXISTS category CASCADE;
+            `);
+        }
+
+        const schema = `
             CREATE TABLE IF NOT EXISTS category (
-                                                    id SERIAL PRIMARY KEY,
-                                                    name VARCHAR(50) NOT NULL,
-                parent_category_id INTEGER REFERENCES category(id) ON DELETE SET NULL
-                );
-            CREATE TABLE IF NOT EXISTS store (
-                                                 store_id VARCHAR(3) PRIMARY KEY,
-                name VARCHAR(50) UNIQUE NOT NULL,
-                date_of_founding DATE NOT NULL,
-                physical_address VARCHAR(100) NOT NULL,
-                store_email VARCHAR(40) UNIQUE NOT NULL CHECK (store_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'),
-                rating DECIMAL(2,1) NOT NULL DEFAULT 0 CHECK (rating >= 0 AND rating <= 5)
-                );
-            CREATE TABLE IF NOT EXISTS personal (
-                                                    id VARCHAR(10) PRIMARY KEY,
-                first_name VARCHAR(20) NOT NULL,
-                last_name VARCHAR(20) NOT NULL,
-                ssn VARCHAR(13) UNIQUE NOT NULL CHECK (ssn ~ '^[0-9]{13}$'),
-                email VARCHAR(50) UNIQUE NOT NULL CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'),
-                password VARCHAR NOT NULL
-                );
-            CREATE TABLE IF NOT EXISTS permissions (
-                                                       personal_is VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
-                type VARCHAR(50) NOT NULL,
-                authorisation VARCHAR(50) NOT NULL
-                );
-            CREATE TABLE IF NOT EXISTS boss (
-                                                boss_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE
-                );
-            CREATE TABLE IF NOT EXISTS employees (
-                                                     employee_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
-                date_of_hire DATE NOT NULL
-                );
-            CREATE TABLE IF NOT EXISTS client (
-                                                  client_id SERIAL PRIMARY KEY,
-                                                  first_name VARCHAR(50) NOT NULL,
-                last_name VARCHAR(50) NOT NULL,
-                email VARCHAR(50) UNIQUE NOT NULL CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'),
-                password VARCHAR NOT NULL
-                );
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(50) NOT NULL,
+                parent_category_id INTEGER REFERENCES category(id) NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS product (
-                                                   code VARCHAR(8) PRIMARY KEY,
-                price DECIMAL(10,2) NOT NULL CHECK (price >= 0),
-                availability INTEGER NOT NULL DEFAULT 0,
+                code VARCHAR(8) PRIMARY KEY DEFAULT '-1',
+                price DECIMAL(10,2) NOT NULL CHECK (price >= 0.0),
+                availability INTEGER NOT NULL,
                 weight DECIMAL(5,2) NOT NULL CHECK (weight > 0),
                 width_x_length_x_depth VARCHAR(20) NOT NULL,
                 aprox_production_time INTEGER NOT NULL,
                 description VARCHAR(500) NOT NULL,
-                category_id INTEGER NOT NULL REFERENCES category(id) ON DELETE SET NULL,
-                store_id VARCHAR(3) REFERENCES store(store_id) ON DELETE CASCADE
-                );
+                category_id INTEGER NOT NULL REFERENCES category(id) ON DELETE SET DEFAULT
+            );
+
             CREATE TABLE IF NOT EXISTS image (
-                                                 product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
-                image VARCHAR NOT NULL DEFAULT 'Image not found!'
-                );
+                product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
+                image VARCHAR NOT NULL DEFAULT 'Image NOT found!'
+            );
+
             CREATE TABLE IF NOT EXISTS color (
-                                                 product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
+                product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
                 color VARCHAR(50)
-                );
+            );
+
+            CREATE TABLE IF NOT EXISTS store (
+                store_ID VARCHAR(3) PRIMARY KEY,
+                name VARCHAR(50) UNIQUE NOT NULL,
+                date_of_founding DATE NOT NULL,
+                physical_address VARCHAR(100) NOT NULL,
+                store_email VARCHAR(40) UNIQUE NOT NULL CHECK (store_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'),
+                rating DECIMAL(2,1) NOT NULL DEFAULT 0 CHECK (rating>=0.0 AND rating<=5.0)
+            );
+
+            CREATE TABLE IF NOT EXISTS personal (
+                id VARCHAR(10) PRIMARY KEY,
+                first_name VARCHAR(20) NOT NULL,
+                last_name VARCHAR(20) NOT NULL,
+                ssn VARCHAR(13) NOT NULL CHECK (ssn ~ '^[0-9]{13}$'),
+                email VARCHAR(50) UNIQUE NOT NULL CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'),
+                password VARCHAR NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS permissions (
+                personal_is VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
+                type VARCHAR(50) NOT NULL,
+                authorisation VARCHAR(50) NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS boss (
+                boss_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS employees (
+                employee_id VARCHAR(10) PRIMARY KEY REFERENCES personal(id) ON DELETE CASCADE,
+                date_of_hire DATE NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS client (
+                client_ID SERIAL PRIMARY KEY,
+                first_name VARCHAR(50) NOT NULL,
+                last_name VARCHAR(50) NOT NULL,
+                email VARCHAR(50) UNIQUE NOT NULL CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'),
+                password VARCHAR NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS delivery_address (
-                                                            client_id INTEGER PRIMARY KEY REFERENCES client(client_id) ON DELETE CASCADE,
+                client_ID INTEGER PRIMARY KEY REFERENCES client(client_ID) ON DELETE CASCADE,
                 address VARCHAR(200) NOT NULL,
                 city VARCHAR(30) NOT NULL,
                 postcode VARCHAR(20) NOT NULL,
                 country VARCHAR(40) NOT NULL,
                 is_default BOOLEAN DEFAULT TRUE
-                );
+            );
+
             CREATE TABLE IF NOT EXISTS "order" (
-                                                   order_num VARCHAR(11) PRIMARY KEY,
-                client_id INTEGER REFERENCES client(client_id) ON DELETE CASCADE,
+                order_num VARCHAR(11) PRIMARY KEY,
+                client_ID INTEGER REFERENCES client(client_ID) ON DELETE CASCADE,
                 status VARCHAR(20) NOT NULL DEFAULT 'placed order',
-                last_date_mod TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_date_mod TIMESTAMP NOT NULL,
                 payment_method VARCHAR(250) NOT NULL,
-                discount DECIMAL(5,2) DEFAULT 0 CHECK (discount >= 0 AND discount <= 100),
-                store_id VARCHAR(3) REFERENCES store(store_id) ON DELETE SET NULL,
-                order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                quantity INTEGER DEFAULT 0,
-                delivery_address VARCHAR(500),
-                CONSTRAINT check_status CHECK (status IN ('placed order','being processed','shipping','delivered','canceled'))
-                );
+                discount DECIMAL(5,2) DEFAULT 0.0 CHECK(discount>=0.0 AND discount<=100.00),
+                CONSTRAINT check_status CHECK (status IN ('placed order', 'being processed', 'shipping', 'delivered', 'canceled'))
+            );
+
             CREATE TABLE IF NOT EXISTS review (
-                                                  order_num VARCHAR(11) PRIMARY KEY REFERENCES "order"(order_num) ON DELETE CASCADE,
+                order_num VARCHAR(11) PRIMARY KEY REFERENCES "order"(order_num) ON DELETE CASCADE,
                 comment VARCHAR(300),
-                rating DECIMAL(2,1) NOT NULL CHECK (rating >= 0 AND rating <= 5),
-                last_mod_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                review_id VARCHAR(20) UNIQUE,
-                client_id INTEGER REFERENCES client(client_id) ON DELETE SET NULL,
-                product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
-                review_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
+                rating DECIMAL(2,1) NOT NULL CHECK(rating>=0.0 AND rating<=5.0),
+                last_mod_date TIMESTAMP NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS refund (
-                                                  refund_id VARCHAR(50) PRIMARY KEY,
+                refund_id SERIAL PRIMARY KEY,
                 order_num VARCHAR(11) REFERENCES "order"(order_num) ON DELETE CASCADE,
                 reason VARCHAR(300),
-                amount DECIMAL(10,2) NOT NULL,
+                amount DECIMAL(5,2) NOT NULL,
                 status VARCHAR(100) NOT NULL DEFAULT 'requested refund',
-                request_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                processed_date TIMESTAMP
-                );
+                CONSTRAINT check_refund_status CHECK (status IN ('requested refund', 'being revied', 'approved', 'not approved', 'processed'))
+            );
+
             CREATE TABLE IF NOT EXISTS report (
-                                                  date TIMESTAMP NOT NULL,
-                                                  store_id VARCHAR(3) NOT NULL REFERENCES store(store_id) ON DELETE CASCADE,
-                overall_profit NUMERIC NOT NULL DEFAULT 0 CHECK (overall_profit >= 0),
-                sales_trend VARCHAR(100) NOT NULL DEFAULT '',
-                marketing_growth VARCHAR(100) NOT NULL DEFAULT '',
-                owner_signature VARCHAR(50) NOT NULL DEFAULT 'Not signed yet',
-                id VARCHAR(50) UNIQUE,
-                period VARCHAR(50),
-                start_date DATE,
-                end_date DATE,
-                type VARCHAR(50),
-                generated_by VARCHAR(10) REFERENCES personal(id) ON DELETE SET NULL,
-                generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (date, store_id)
-                );
-            CREATE TABLE IF NOT EXISTS monthly_profit (
-                                                          report_date TIMESTAMP NOT NULL,
-                                                          store_id VARCHAR(3) NOT NULL,
-                month_and_year DATE NOT NULL,
-                profit NUMERIC NOT NULL DEFAULT 0,
-                PRIMARY KEY (report_date, store_id),
-                FOREIGN KEY (report_date, store_id) REFERENCES report(date, store_id) ON DELETE CASCADE
-                );
-            CREATE TABLE IF NOT EXISTS exchanges_data (
-                                                          report_date TIMESTAMP NOT NULL,
-                                                          store_id VARCHAR(3) NOT NULL,
-                monthly_profit NUMERIC NOT NULL DEFAULT 0,
                 date TIMESTAMP NOT NULL,
-                sales NUMERIC NOT NULL DEFAULT 0,
-                damages NUMERIC NOT NULL DEFAULT 0 CHECK (damages <= 0),
-                PRIMARY KEY (report_date, store_id),
-                FOREIGN KEY (report_date, store_id) REFERENCES report(date, store_id) ON DELETE CASCADE
-                );
+                store_ID VARCHAR(3) NOT NULL REFERENCES store(store_ID) ON DELETE CASCADE,
+                overall_profit NUMERIC NOT NULL DEFAULT 0.0 CHECK(overall_profit>=0),
+                sales_trend VARCHAR(100) NOT NULL,
+                marketing_growth VARCHAR(100) NOT NULL,
+                owner_signature VARCHAR(50) NOT NULL DEFAULT 'Not signed yet',
+                PRIMARY KEY (date, store_ID)
+            );
+
+            CREATE TABLE IF NOT EXISTS monthly_profit (
+                report_date TIMESTAMP NOT NULL,
+                store_ID VARCHAR(3) NOT NULL,
+                month_and_year DATE NOT NULL,
+                profit NUMERIC NOT NULL DEFAULT 0.0,
+                PRIMARY KEY(report_date, store_ID),
+                FOREIGN KEY (report_date, store_ID) REFERENCES report(date, store_ID) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS exchanges_data (
+                report_date TIMESTAMP NOT NULL,
+                store_ID VARCHAR(3) NOT NULL,
+                monthly_profit NUMERIC NOT NULL DEFAULT 0.0,
+                date TIMESTAMP NOT NULL,
+                sales NUMERIC NOT NULL DEFAULT 0.0,
+                damages NUMERIC NOT NULL DEFAULT 0.0 CHECK (damages<=0),
+                PRIMARY KEY (report_date, store_ID),
+                FOREIGN KEY (report_date, store_ID) REFERENCES report(date, store_ID) ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS request (
-                                                   request_num VARCHAR(14) PRIMARY KEY,
+                request_num VARCHAR(14) PRIMARY KEY,
                 date_and_time TIMESTAMP NOT NULL,
                 problem VARCHAR(300) NOT NULL,
                 notes_of_communication VARCHAR,
-                customer_satisfaction NUMERIC NOT NULL DEFAULT 0,
-                client_id INTEGER REFERENCES client(client_id) ON DELETE CASCADE,
-                store_id VARCHAR(3) REFERENCES store(store_id) ON DELETE CASCADE,
-                status VARCHAR(50) DEFAULT 'pending'
-                );
+                customer_satisfaction NUMERIC NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS makes_request (
-                                                         client_id INTEGER NOT NULL REFERENCES client(client_id) ON DELETE CASCADE,
+                client_ID INTEGER NOT NULL REFERENCES client(client_ID) ON DELETE CASCADE,
                 order_num VARCHAR(11) UNIQUE NOT NULL REFERENCES "order"(order_num) ON DELETE CASCADE,
-                PRIMARY KEY(client_id, order_num)
-                );
+                PRIMARY KEY(client_ID, order_num)
+            );
+
             CREATE TABLE IF NOT EXISTS answers (
-                                                   request_num VARCHAR(14) REFERENCES request(request_num) ON DELETE CASCADE,
+                request_num VARCHAR(14) REFERENCES request(request_num) ON DELETE CASCADE,
                 personal_id VARCHAR(10) NOT NULL REFERENCES personal(id) ON DELETE CASCADE,
                 PRIMARY KEY(request_num, personal_id)
-                );
+            );
+
             CREATE TABLE IF NOT EXISTS for_store (
-                                                     request_num VARCHAR(14) REFERENCES request(request_num) ON DELETE CASCADE,
-                store_id VARCHAR(3) REFERENCES store(store_id) ON DELETE CASCADE,
-                PRIMARY KEY(request_num, store_id)
-                );
+                request_num VARCHAR(14) REFERENCES request(request_num) ON DELETE CASCADE,
+                store_ID VARCHAR(3) REFERENCES store(store_ID) ON DELETE CASCADE,
+                PRIMARY KEY(request_num, store_ID)
+            );
+
             CREATE TABLE IF NOT EXISTS "change" (
-                                                    date_and_time TIMESTAMP NOT NULL,
-                                                    product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
+                date_and_time TIMESTAMP NOT NULL,
+                product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
                 changes VARCHAR NOT NULL,
-                PRIMARY KEY(date_and_time, product_code)
-                );
+                PRIMARY KEY (date_and_time, product_code)
+            );
+
             CREATE TABLE IF NOT EXISTS makes_change (
-                                                        personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
+                personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
                 change_date_time TIMESTAMP,
                 product_code VARCHAR(8),
                 PRIMARY KEY(personal_id, change_date_time, product_code),
                 FOREIGN KEY(change_date_time, product_code) REFERENCES "change"(date_and_time, product_code) ON DELETE CASCADE
-                );
+            );
+
             CREATE TABLE IF NOT EXISTS works_in_store (
-                                                          personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
-                store_id VARCHAR(3) REFERENCES store(store_id) ON DELETE CASCADE,
-                PRIMARY KEY(personal_id, store_id)
-                );
+                personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
+                store_ID VARCHAR(3) REFERENCES store(store_ID) ON DELETE CASCADE,
+                PRIMARY KEY(personal_id, store_ID)
+            );
+
             CREATE TABLE IF NOT EXISTS worked (
-                                                  personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
+                personal_id VARCHAR(10) REFERENCES personal(id) ON DELETE CASCADE,
                 report_date TIMESTAMP,
-                store_id VARCHAR(3),
-                wage NUMERIC NOT NULL CHECK(wage >= 0),
-                pay_method VARCHAR DEFAULT 'full_time' CHECK(pay_method IN ('full_time','part-time','custom')),
+                store_ID VARCHAR(3),
+                wage NUMERIC NOT NULL CHECK (wage>=0),
+                pay_method VARCHAR DEFAULT 'full-time',
                 total_hours NUMERIC NOT NULL,
                 week VARCHAR(23) NOT NULL,
-                PRIMARY KEY(personal_id, report_date, store_id),
-                FOREIGN KEY(report_date, store_id) REFERENCES report(date, store_id) ON DELETE CASCADE
-                );
-            CREATE TABLE IF NOT EXISTS sells (
-                                                 product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
-                store_id VARCHAR(3) REFERENCES store(store_id) ON DELETE CASCADE,
-                discount NUMERIC NOT NULL DEFAULT 0,
-                PRIMARY KEY(product_code, store_id)
-                );
-            CREATE TABLE IF NOT EXISTS includes (
-                                                    order_num VARCHAR(11) REFERENCES "order"(order_num) ON DELETE CASCADE,
-                product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
-                quantity INTEGER NOT NULL CHECK(quantity >= 0),
-                PRIMARY KEY(order_num, product_code)
-                );
-            CREATE TABLE IF NOT EXISTS approves (
-                                                    boss_id VARCHAR(10) REFERENCES boss(boss_id) ON DELETE CASCADE,
-                report_date TIMESTAMP,
-                store_id VARCHAR(3),
-                owner_signature VARCHAR NOT NULL,
-                PRIMARY KEY(boss_id, report_date, store_id),
-                FOREIGN KEY(report_date, store_id) REFERENCES report(date, store_id) ON DELETE CASCADE
-                );
+                PRIMARY KEY (personal_id, report_date, store_ID),
+                FOREIGN KEY (report_date, store_ID) REFERENCES report(date, store_ID) ON DELETE CASCADE,
+                CONSTRAINT check_pay_method CHECK (pay_method IN ('full_time', 'part-time', 'custom'))
+            );
 
--- Application support tables required by the existing HTTP/authentication layer.
+            CREATE TABLE IF NOT EXISTS sells (
+                product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
+                store_ID VARCHAR(3) REFERENCES store(store_ID) ON DELETE CASCADE,
+                discount NUMERIC NOT NULL DEFAULT 0.0,
+                PRIMARY KEY (product_code, store_ID)
+            );
+
+            CREATE TABLE IF NOT EXISTS includes (
+                order_num VARCHAR(11) REFERENCES "order"(order_num) ON DELETE CASCADE,
+                product_code VARCHAR(8) REFERENCES product(code) ON DELETE CASCADE,
+                quantity INTEGER NOT NULL CHECK(quantity>=0),
+                PRIMARY KEY (order_num, product_code)
+            );
+
+            CREATE TABLE IF NOT EXISTS approves (
+                boss_id VARCHAR(10) REFERENCES boss(boss_id) ON DELETE CASCADE,
+                report_date TIMESTAMP,
+                store_ID VARCHAR(3),
+                owner_signature VARCHAR NOT NULL,
+                PRIMARY KEY (boss_id, report_date, store_ID),
+                FOREIGN KEY (report_date, store_ID) REFERENCES report(date, store_ID) ON DELETE CASCADE
+            );
+
+            -- These four small tables are application authentication/audit storage.
+            -- They do not modify any of the project tables above.
             CREATE TABLE IF NOT EXISTS users (
-                                                 id VARCHAR(50) PRIMARY KEY,
+                id VARCHAR(50) PRIMARY KEY,
                 username VARCHAR(100) UNIQUE NOT NULL,
                 email VARCHAR(255) UNIQUE NOT NULL,
                 password VARCHAR(255) NOT NULL,
                 user_type VARCHAR(50) NOT NULL,
                 force_password_change BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
+            );
+
             CREATE TABLE IF NOT EXISTS roles (
-                                                 role_id SERIAL PRIMARY KEY,
-                                                 name VARCHAR(50) UNIQUE NOT NULL,
+                role_id SERIAL PRIMARY KEY,
+                name VARCHAR(50) UNIQUE NOT NULL,
                 description TEXT
-                );
+            );
+
             CREATE TABLE IF NOT EXISTS user_roles (
-                                                      user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
+                user_id VARCHAR(50) REFERENCES users(id) ON DELETE CASCADE,
                 role_id INTEGER REFERENCES roles(role_id) ON DELETE CASCADE,
                 PRIMARY KEY(user_id, role_id)
-                );
+            );
+
             CREATE TABLE IF NOT EXISTS audit_log (
-                                                     log_id BIGSERIAL PRIMARY KEY,
-                                                     user_id VARCHAR(50),
+                log_id BIGSERIAL PRIMARY KEY,
+                user_id VARCHAR(50),
                 action VARCHAR(100) NOT NULL,
                 resource_type VARCHAR(50),
                 resource_id VARCHAR(50),
                 details TEXT,
                 ip_address VARCHAR(45),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-            CREATE INDEX IF NOT EXISTS idx_product_store ON product(store_id);
+            );
+
             CREATE INDEX IF NOT EXISTS idx_product_category ON product(category_id);
-            CREATE INDEX IF NOT EXISTS idx_order_client ON "order"(client_id);
-            CREATE INDEX IF NOT EXISTS idx_order_store ON "order"(store_id);
-            CREATE INDEX IF NOT EXISTS idx_order_date ON "order"(order_date);
-            CREATE INDEX IF NOT EXISTS idx_review_client ON review(client_id);
-            CREATE INDEX IF NOT EXISTS idx_review_product ON review(product_code);
-            CREATE INDEX IF NOT EXISTS idx_request_client ON request(client_id);
-            CREATE INDEX IF NOT EXISTS idx_request_store ON request(store_id);
+            CREATE INDEX IF NOT EXISTS idx_order_client ON "order"(client_ID);
+            CREATE INDEX IF NOT EXISTS idx_review_order ON review(order_num);
+            CREATE INDEX IF NOT EXISTS idx_request_date ON request(date_and_time);
             CREATE INDEX IF NOT EXISTS idx_refund_order ON refund(order_num);
             CREATE INDEX IF NOT EXISTS idx_personal_email ON personal(email);
             CREATE INDEX IF NOT EXISTS idx_client_email ON client(email);
             CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
             CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
             CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
-
         `;
+
         await pool.query(schema);
+
         const roles = [
             ['admin', 'System administrator'],
             ['store_owner', 'Store owner'],
@@ -717,6 +790,7 @@ const database = {
             ['client', 'Registered client'],
             ['guest', 'Unregistered guest']
         ];
+
         for (const [name, description] of roles) {
             await pool.query(
                 'INSERT INTO roles(name, description) VALUES($1,$2) ON CONFLICT(name) DO NOTHING',
@@ -724,39 +798,27 @@ const database = {
             );
         }
 
-        const bcrypt = require('bcryptjs');
         const hash = bcrypt.hashSync('Admin123!', 10);
         await pool.query(
             `INSERT INTO users(id, username, email, password, user_type, force_password_change)
-             VALUES('000000','admin','admin@handcraft.com',$1,'admin',TRUE)
-                 ON CONFLICT(id) DO NOTHING`,
+             VALUES('000000','admin','admin@handcraft.com',$1,'admin',TRUE) ON CONFLICT(id) DO NOTHING`,
             [hash]
         );
         await pool.query(
             `INSERT INTO personal(id, first_name, last_name, ssn, email, password)
-             VALUES('000000','Admin','User','0000000000000','admin@handcraft.com',$1)
-                 ON CONFLICT(id) DO NOTHING`,
+             VALUES('000000','Admin','User','0000000000000','admin@handcraft.com',$1) ON CONFLICT(id) DO NOTHING`,
             [hash]
         );
-        await pool.query(
-            `INSERT INTO boss(boss_id) VALUES('000000') ON CONFLICT(boss_id) DO NOTHING`
-        );
+        await pool.query(`INSERT INTO boss(boss_id) VALUES('000000') ON CONFLICT(boss_id) DO NOTHING`);
         await pool.query(
             `INSERT INTO permissions(personal_is,type,authorisation)
-             VALUES('000000','ADMIN','full_access')
-                 ON CONFLICT(personal_is) DO NOTHING`
+             VALUES('000000','ADMIN','full_access') ON CONFLICT(personal_is) DO NOTHING`
         );
         await pool.query(
             `INSERT INTO user_roles(user_id,role_id)
-             SELECT '000000', role_id FROM roles WHERE name='admin'
-                 ON CONFLICT DO NOTHING`
+             SELECT '000000', role_id FROM roles WHERE name='admin' ON CONFLICT DO NOTHING`
         );
-        await pool.query(
-            `INSERT INTO category(name,parent_category_id)
-             SELECT 'General', NULL
-                 WHERE NOT EXISTS (SELECT 1 FROM category WHERE name='General')`
-        );
-        console.log('✅ PostgreSQL schema is ready');
+        console.log('✅ PostgreSQL project schema was recreated successfully');
     },
 
     close() {
@@ -769,8 +831,8 @@ const database = {
                     COALESCE(json_agg(json_build_object('name',r.name,'description',r.description))
                              FILTER (WHERE r.role_id IS NOT NULL), '[]') AS roles
              FROM users u
-                      LEFT JOIN user_roles ur ON ur.user_id=u.id
-                      LEFT JOIN roles r ON r.role_id=ur.role_id
+             LEFT JOIN user_roles ur ON ur.user_id=u.id
+             LEFT JOIN roles r ON r.role_id=ur.role_id
              WHERE u.id=$1
              GROUP BY u.id`,
             [String(id)],
@@ -784,11 +846,11 @@ const database = {
                     COALESCE(json_agg(json_build_object('name',r.name,'description',r.description))
                              FILTER (WHERE r.role_id IS NOT NULL), '[]') AS roles
              FROM users u
-                      LEFT JOIN user_roles ur ON ur.user_id=u.id
-                      LEFT JOIN roles r ON r.role_id=ur.role_id
+             LEFT JOIN user_roles ur ON ur.user_id=u.id
+             LEFT JOIN roles r ON r.role_id=ur.role_id
              WHERE u.username=$1 OR u.email=$1
              GROUP BY u.id
-                 LIMIT 1`,
+             LIMIT 1`,
             [username],
             (err, result) => callback(err, result?.rows?.[0])
         );
@@ -806,8 +868,7 @@ const database = {
                         userType === 'store_employee' ? 'store_employee' : 'guest';
                 dbQuery(
                     `INSERT INTO user_roles(user_id,role_id)
-                     SELECT $1, role_id FROM roles WHERE name=$2
-                         ON CONFLICT DO NOTHING`,
+                     SELECT $1, role_id FROM roles WHERE name=$2`,
                     [String(id), roleName],
                     roleErr => callback(roleErr, String(id))
                 );
@@ -819,7 +880,7 @@ const database = {
         dbQuery(
             `INSERT INTO client(first_name,last_name,email,password)
              VALUES($1,$2,$3,$4) RETURNING client_id`,
-            [data.firstName || data.first_name, data.lastName || data.last_name, data.email, data.password],
+            [data.firstName || data.first_name || '', data.lastName || data.last_name || '', data.email, data.password],
             (err, result) => callback(err, result?.rows?.[0]?.client_id)
         );
     },
@@ -845,52 +906,48 @@ const database = {
     },
 
     verifyPassword(password, hash) {
-        const bcrypt = require('bcryptjs');
         try { return bcrypt.compareSync(password, hash); } catch { return false; }
     },
 
     verifyClientPassword(password, hash, callback) {
-        require('bcryptjs').compare(password, hash, callback);
+        bcrypt.compare(password, hash, callback);
     },
 
     logAudit(userId, action, resourceType, resourceId, details, ipAddress) {
         dbQuery(
             `INSERT INTO audit_log(user_id,action,resource_type,resource_id,details,ip_address)
              VALUES($1,$2,$3,$4,$5,$6)`,
-            [userId == null ? null : String(userId), action, resourceType, resourceId == null ? null : String(resourceId), details, ipAddress],
+            [userId == null ? null : String(userId), action, resourceType,
+                resourceId == null ? null : String(resourceId), details, ipAddress],
             () => {}
-        );
-    },
-
-    ensureGeneralCategory(callback) {
-        dbQuery(
-            `INSERT INTO category(name,parent_category_id)
-             SELECT 'General',NULL
-                 WHERE NOT EXISTS(SELECT 1 FROM category WHERE name='General')`,
-            [],
-            err => callback(err)
         );
     },
 
     getProducts(categoryId, searchTerm, callback) {
         const params = [];
         const where = [];
-        if (categoryId) { params.push(categoryId); where.push(`p.category_id=$${params.length}`); }
+        if (categoryId) {
+            params.push(categoryId);
+            where.push(`p.category_id=$${params.length}`);
+        }
         if (searchTerm) {
             params.push(`%${searchTerm}%`);
             where.push(`(p.description ILIKE $${params.length} OR p.code ILIKE $${params.length})`);
         }
-        const sql = `SELECT p.*, c.name AS category_name, p.store_id
-                     FROM product p LEFT JOIN category c ON c.id=p.category_id
-                         ${where.length ? 'WHERE '+where.join(' AND ') : ''}
+        const sql = `SELECT p.*, c.name AS category_name, LEFT(p.code,3) AS store_id
+                     FROM product p
+                     LEFT JOIN category c ON c.id=p.category_id
+                     ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
                      ORDER BY p.code`;
         dbQuery(sql, params, (err, result) => callback(err, result?.rows || []));
     },
 
     getProductById(id, callback) {
         dbQuery(
-            `SELECT p.*,c.name AS category_name FROM product p
-                                                         LEFT JOIN category c ON c.id=p.category_id WHERE p.code=$1 OR p.code::text=$1 LIMIT 1`,
+            `SELECT p.*, c.name AS category_name, LEFT(p.code,3) AS store_id
+             FROM product p
+             LEFT JOIN category c ON c.id=p.category_id
+             WHERE p.code=$1 LIMIT 1`,
             [String(id)],
             (err,result)=>callback(err,result?.rows?.[0])
         );
@@ -898,30 +955,37 @@ const database = {
 
     getProductByCode(code, callback) {
         dbQuery(
-            `SELECT p.*,c.name AS category_name FROM product p
-                                                         LEFT JOIN category c ON c.id=p.category_id WHERE p.code=$1`,
+            `SELECT p.*, c.name AS category_name, LEFT(p.code,3) AS store_id
+             FROM product p
+             LEFT JOIN category c ON c.id=p.category_id
+             WHERE p.code=$1`,
             [code],
             (err,result)=>callback(err,result?.rows?.[0])
         );
     },
 
     addProduct(personalId, data, callback) {
-        const storeId = data.store_id || data.storeId || String(data.code).slice(0,3);
+        const storeId = data.store_id || data.storeId || String(data.code || '').slice(0,3);
+        if (!data.category_id) {
+            return callback(new Error('category_id is required because product.category_id is NOT NULL'));
+        }
         dbQuery(
             `INSERT INTO product(code,price,availability,weight,width_x_length_x_depth,
-                                 aprox_production_time,description,category_id,store_id)
-             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING code`,
+                                 aprox_production_time,description,category_id)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING code`,
             [
                 data.code, data.price, data.availability ?? 0, data.weight,
                 data.width_x_length_x_depth || data.dimensions || '',
-                data.aprox_production_time || data.production_time || 0,
-                data.description, data.category_id, storeId
+                data.aprox_production_time ?? data.production_time ?? 0,
+                data.description, data.category_id
             ],
             (err,result)=>{
                 if (err) return callback(err);
                 dbQuery(
-                    `INSERT INTO sells(product_code,store_id,discount)
-                     VALUES($1,$2,$3) ON CONFLICT(product_code,store_id) DO UPDATE SET discount=EXCLUDED.discount`,
+                    `INSERT INTO sells(product_code,store_ID,discount)
+                     VALUES($1,$2,$3)
+                     ON CONFLICT(product_code,store_ID)
+                     DO UPDATE SET discount=EXCLUDED.discount`,
                     [data.code,storeId,data.discount || 0],
                     e => callback(e, data.code)
                 );
@@ -933,12 +997,12 @@ const database = {
         const fields = [];
         const params = [];
         const allowed = [
-            ['price','price'],['availability','availability'],['weight','weight'],
+            ['price','price'], ['availability','availability'], ['weight','weight'],
             ['width_x_length_x_depth','width_x_length_x_depth'],
             ['dimensions','width_x_length_x_depth'],
             ['aprox_production_time','aprox_production_time'],
             ['production_time','aprox_production_time'],
-            ['description','description'],['category_id','category_id']
+            ['description','description'], ['category_id','category_id']
         ];
         for (const [input,col] of allowed) {
             if (data[input] !== undefined) {
@@ -953,14 +1017,18 @@ const database = {
     },
 
     deleteProduct(productCode, storeId, personalId, callback) {
-        dbQuery('DELETE FROM product WHERE code=$1 AND store_id=$2', [productCode,storeId],
+        dbQuery('DELETE FROM product WHERE code=$1 AND LEFT(code,3)=$2', [productCode,storeId],
             (err)=>callback(err));
     },
 
     createCategory(data, callback) {
+        const parent = data.parent_category_id ?? data.parentCategoryId ?? data.parent_id;
+        if (parent === undefined || parent === null || parent === '') {
+            return callback(new Error('parent_category_id is required by the project schema'));
+        }
         dbQuery(
             `INSERT INTO category(name,parent_category_id) VALUES($1,$2) RETURNING id,name,parent_category_id`,
-            [data.name, data.parent_category_id || null],
+            [data.name, parent],
             (err,result)=>callback(err,result?.rows?.[0])
         );
     },
@@ -985,81 +1053,103 @@ const database = {
     createOrderNew(data, callback) {
         const items = data.items || data.products || data.order_items || [];
         const storeId = data.store_id || data.storeId || (items[0]?.code ? String(items[0].code).slice(0,3) : null);
-        const now = new Date();
-        const year = String(now.getFullYear()).slice(-3);
-        const prefix = storeId || '000';
-        const insertOrder = () => {
-            dbQuery(
-                `SELECT COUNT(*)::int AS n FROM "order" WHERE store_id=$1 AND EXTRACT(YEAR FROM order_date)=EXTRACT(YEAR FROM CURRENT_DATE)`,
-                [storeId],
-                (countErr,countResult)=>{
-                    if (countErr) return callback(countErr);
-                    const seq=Number(countResult.rows[0].n)+1;
-                    const orderNum=`${prefix}${year}${String(seq).padStart(5,'0')}`;
-                    dbQuery(
-                        `INSERT INTO "order"(order_num,client_id,status,last_date_mod,payment_method,discount,store_id,order_date,quantity,delivery_address)
-                         VALUES($1,$2,$3,CURRENT_TIMESTAMP,$4,$5,$6,CURRENT_TIMESTAMP,$7,$8) RETURNING order_num`,
-                        [orderNum,data.client_id,data.status||'placed order',data.payment_method,data.discount||0,storeId,
-                            items.reduce((n,x)=>n+Number(x.quantity||1),0),data.delivery_address||data.deliveryAddress||null],
-                        (err,result)=>{
-                            if(err) return callback(err);
-                            let pending=items.length;
-                            if(!pending) return callback(null,orderNum);
-                            let firstErr=null;
-                            for(const item of items){
-                                dbQuery(
-                                    `INSERT INTO includes(order_num,product_code,quantity) VALUES($1,$2,$3)`,
-                                    [orderNum,item.product_code||item.code,item.quantity||1],
-                                    e=>{ if(e) firstErr ||= e; if(--pending===0) callback(firstErr,firstErr?undefined:orderNum); }
-                                );
-                            }
+        if (!storeId) return callback(new Error('Store ID is required'));
+        const year = String(new Date().getFullYear()).slice(-3);
+
+        dbQuery(
+            `SELECT COUNT(*)::int AS n
+             FROM "order"
+             WHERE LEFT(order_num,3)=$1
+               AND SUBSTRING(order_num FROM 4 FOR 3)=$2`,
+            [storeId, year],
+            (countErr,countResult)=>{
+                if (countErr) return callback(countErr);
+                const seq=Number(countResult.rows[0].n)+1;
+                const orderNum=`${storeId}${year}${String(seq).padStart(5,'0')}`;
+                dbQuery(
+                    `INSERT INTO "order"(order_num,client_ID,status,last_date_mod,payment_method,discount)
+                     VALUES($1,$2,$3,CURRENT_TIMESTAMP,$4,$5) RETURNING order_num`,
+                    [orderNum,data.client_id,data.status||'placed order',data.payment_method||'cash',data.discount||0],
+                    (err,result)=>{
+                        if(err) return callback(err);
+                        let pending=items.length;
+                        if(!pending) return callback(null,orderNum);
+                        let firstErr=null;
+                        for(const item of items){
+                            dbQuery(
+                                `INSERT INTO includes(order_num,product_code,quantity) VALUES($1,$2,$3)`,
+                                [orderNum,item.product_code||item.code,item.quantity||1],
+                                e=>{ if(e && !firstErr) firstErr=e; if(--pending===0) callback(firstErr,firstErr?undefined:orderNum); }
+                            );
                         }
-                    );
-                }
-            );
-        };
-        insertOrder();
+                    }
+                );
+            }
+        );
     },
 
     getOrdersByClient(clientId, callback) {
         dbQuery(
-            `SELECT o.*,COALESCE(json_agg(json_build_object('product_code',i.product_code,'quantity',i.quantity,'price',p.price))
-                                 FILTER(WHERE i.product_code IS NOT NULL),'[]') AS items
+            `SELECT o.*, LEFT(o.order_num,3) AS store_id,
+                    o.last_date_mod AS order_date,
+                    COALESCE(json_agg(json_build_object('product_code',i.product_code,'quantity',i.quantity,'price',p.price))
+                             FILTER(WHERE i.product_code IS NOT NULL),'[]') AS items
              FROM "order" o
-                      LEFT JOIN includes i ON i.order_num=o.order_num
-                      LEFT JOIN product p ON p.code=i.product_code
-             WHERE o.client_id=$1 GROUP BY o.order_num ORDER BY o.order_date DESC`,
+             LEFT JOIN includes i ON i.order_num=o.order_num
+             LEFT JOIN product p ON p.code=i.product_code
+             WHERE o.client_ID=$1
+             GROUP BY o.order_num
+             ORDER BY o.last_date_mod DESC`,
             [clientId],(err,result)=>callback(err,result?.rows||[])
         );
     },
 
     createReviewNew(data, callback) {
-        const reviewId = data.review_id || ('REV'+Date.now());
         dbQuery(
-            `INSERT INTO review(order_num,comment,rating,last_mod_date,review_id,client_id,product_code,review_date)
-             VALUES($1,$2,$3,CURRENT_TIMESTAMP,$4,$5,$6,CURRENT_TIMESTAMP)
-                 RETURNING review_id`,
-            [data.order_num,data.comment||null,data.rating,reviewId,data.client_id||null,data.product_code||null],
-            (err,result)=>callback(err,result?.rows?.[0]?.review_id || reviewId)
+            `INSERT INTO review(order_num,comment,rating,last_mod_date)
+             VALUES($1,$2,$3,CURRENT_TIMESTAMP)
+             RETURNING order_num`,
+            [data.order_num,data.comment||null,data.rating],
+            (err,result)=>callback(err,result?.rows?.[0]?.order_num)
         );
     },
 
     createRequest(data, callback) {
         dbQuery(
-            `INSERT INTO request(request_num,date_and_time,problem,notes_of_communication,customer_satisfaction,client_id,store_id)
-             VALUES($1,$2,$3,$4,0,$5,$6) RETURNING request_num`,
-            [data.request_num,data.date_and_time,data.problem,data.notes_of_communication||null,data.client_id,data.store_id],
-            (err,result)=>callback(err,result?.rows?.[0]?.request_num)
+            `INSERT INTO request(request_num,date_and_time,problem,notes_of_communication,customer_satisfaction)
+             VALUES($1,$2,$3,$4,0) RETURNING request_num`,
+            [data.request_num,data.date_and_time,data.problem,data.notes_of_communication||null],
+            (err,result)=>{
+                if (err) return callback(err);
+                dbQuery(
+                    `INSERT INTO for_store(request_num,store_ID) VALUES($1,$2)`,
+                    [data.request_num,data.store_id],
+                    storeErr=>{
+                        if (storeErr) return callback(storeErr);
+                        if (data.order_num) {
+                            dbQuery(
+                                `INSERT INTO makes_request(client_ID,order_num) VALUES($1,$2)`,
+                                [data.client_id,data.order_num],
+                                e=>callback(e,data.request_num)
+                            );
+                        } else {
+                            callback(null,data.request_num);
+                        }
+                    }
+                );
+            }
         );
     },
 
     createRefund(data, callback) {
-        dbQuery(
-            `INSERT INTO refund(refund_id,order_num,reason,amount,status,request_date)
-             VALUES($1,$2,$3,$4,$5,CURRENT_TIMESTAMP) RETURNING refund_id`,
-            [String(data.refund_id),data.order_num,data.reason||null,data.amount,data.status||'requested refund'],
-            (err,result)=>callback(err,result?.rows?.[0]?.refund_id)
-        );
+        const suppliedId = data.refund_id;
+        const query = suppliedId
+            ? `INSERT INTO refund(refund_id,order_num,reason,amount,status) VALUES($1,$2,$3,$4,$5) RETURNING refund_id`
+            : `INSERT INTO refund(order_num,reason,amount,status) VALUES($1,$2,$3,$4) RETURNING refund_id`;
+        const params = suppliedId
+            ? [Number.parseInt(String(suppliedId),10) || undefined,data.order_num,data.reason||null,data.amount,data.status||'requested refund']
+            : [data.order_num,data.reason||null,data.amount,data.status||'requested refund'];
+        dbQuery(query,params,(err,result)=>callback(err,result?.rows?.[0]?.refund_id));
     },
 
     getAllUsers(callback) {
@@ -1070,72 +1160,77 @@ const database = {
     },
 
     getAllOrders(callback) {
-        dbQuery(`SELECT o.*,c.first_name,c.last_name,c.email FROM "order" o
-                                                                      LEFT JOIN client c ON c.client_id=o.client_id ORDER BY o.order_date DESC`,
+        dbQuery(`SELECT o.*, LEFT(o.order_num,3) AS store_id, o.last_date_mod AS order_date,
+                        c.first_name,c.last_name,c.email
+                 FROM "order" o
+                 LEFT JOIN client c ON c.client_id=o.client_ID
+                 ORDER BY o.last_date_mod DESC`,
             [],(err,result)=>callback(err,result?.rows||[]));
     },
 
     getStoreProducts(storeId, callback) {
-        dbQuery(`SELECT p.*,c.name AS category_name,s.discount FROM product p
-                                                                        LEFT JOIN category c ON c.id=p.category_id
-                                                                        LEFT JOIN sells s ON s.product_code=p.code AND s.store_id=$1
-                 WHERE p.store_id=$1 OR EXISTS(SELECT 1 FROM sells sx WHERE sx.product_code=p.code AND sx.store_id=$1)
+        dbQuery(`SELECT p.*,c.name AS category_name,LEFT(p.code,3) AS store_id,s.discount
+                 FROM product p
+                 LEFT JOIN category c ON c.id=p.category_id
+                 LEFT JOIN sells s ON s.product_code=p.code AND s.store_ID=$1
+                 WHERE LEFT(p.code,3)=$1 OR EXISTS(SELECT 1 FROM sells sx WHERE sx.product_code=p.code AND sx.store_ID=$1)
                  ORDER BY p.code`,[storeId],(err,result)=>callback(err,result?.rows||[]));
     },
 
     getStoreOrders(storeId, callback) {
-        dbQuery(`SELECT o.*,c.first_name,c.last_name FROM "order" o
-                                                              LEFT JOIN client c ON c.client_id=o.client_id
-                 WHERE o.store_id=$1 ORDER BY o.order_date DESC`,[storeId],
+        dbQuery(`SELECT o.*,LEFT(o.order_num,3) AS store_id,o.last_date_mod AS order_date,c.first_name,c.last_name
+                 FROM "order" o
+                 LEFT JOIN client c ON c.client_id=o.client_ID
+                 WHERE LEFT(o.order_num,3)=$1 ORDER BY o.last_date_mod DESC`,[storeId],
             (err,result)=>callback(err,result?.rows||[]));
     },
 
     getStoreEmployees(storeId, callback) {
         dbQuery(`SELECT p.*,e.date_of_hire,per.type,per.authorisation
                  FROM personal p JOIN works_in_store w ON w.personal_id=p.id
-                                 LEFT JOIN employees e ON e.employee_id=p.id
-                                 LEFT JOIN permissions per ON per.personal_is=p.id
-                 WHERE w.store_id=$1 ORDER BY p.last_name,p.first_name`,
+                 LEFT JOIN employees e ON e.employee_id=p.id
+                 LEFT JOIN permissions per ON per.personal_is=p.id
+                 WHERE w.store_ID=$1 ORDER BY p.last_name,p.first_name`,
             [storeId],(err,result)=>callback(err,result?.rows||[]));
     },
 
     getStoreReports(storeId, callback) {
-        dbQuery(`SELECT * FROM report WHERE store_id=$1 ORDER BY date DESC`,[storeId],
+        dbQuery(`SELECT * FROM report WHERE store_ID=$1 ORDER BY date DESC`,[storeId],
             (err,result)=>callback(err,result?.rows||[]));
     },
 
     getStoreStats(storeId, callback) {
         const sql=`SELECT
-                           (SELECT COUNT(*) FROM product WHERE store_id=$1)::int AS product_count,
-                           (SELECT COUNT(*) FROM "order" WHERE store_id=$1)::int AS order_count,
-                           (SELECT COALESCE(SUM(i.quantity*p.price*(1-o.discount/100)),0)
-                            FROM "order" o JOIN includes i ON i.order_num=o.order_num JOIN product p ON p.code=i.product_code
-                            WHERE o.store_id=$1) AS revenue,
-                           (SELECT COUNT(*) FROM works_in_store WHERE store_id=$1)::int AS employee_count,
-                           (SELECT COUNT(*) FROM request WHERE store_id=$1)::int AS request_count,
-                           (SELECT COUNT(*) FROM refund r JOIN "order" o ON o.order_num=r.order_num WHERE o.store_id=$1)::int AS refund_count`;
+            (SELECT COUNT(*) FROM product WHERE LEFT(code,3)=$1)::int AS product_count,
+            (SELECT COUNT(*) FROM "order" WHERE LEFT(order_num,3)=$1)::int AS order_count,
+            (SELECT COALESCE(SUM(i.quantity*p.price*(1-o.discount/100)),0)
+             FROM "order" o JOIN includes i ON i.order_num=o.order_num JOIN product p ON p.code=i.product_code
+             WHERE LEFT(o.order_num,3)=$1) AS revenue,
+            (SELECT COUNT(*) FROM works_in_store WHERE store_ID=$1)::int AS employee_count,
+            (SELECT COUNT(*) FROM for_store WHERE store_ID=$1)::int AS request_count,
+            (SELECT COUNT(*) FROM refund r JOIN "order" o ON o.order_num=r.order_num WHERE LEFT(o.order_num,3)=$1)::int AS refund_count`;
         dbQuery(sql,[storeId],(err,result)=>callback(err,result?.rows?.[0]||{}));
     },
 
     getEmployeeTasks(personalId, storeId, callback) {
         dbQuery(`SELECT r.*,a.personal_id AS answered_by
                  FROM request r
-                          LEFT JOIN answers a ON a.request_num=r.request_num
-                 WHERE r.store_id=$1 AND (a.personal_id=$2 OR a.personal_id IS NULL)
+                 JOIN for_store fs ON fs.request_num=r.request_num
+                 LEFT JOIN answers a ON a.request_num=r.request_num
+                 WHERE fs.store_ID=$1 AND (a.personal_id=$2 OR a.personal_id IS NULL)
                  ORDER BY r.date_and_time DESC`,
             [storeId,personalId],(err,result)=>callback(err,result?.rows||[]));
     },
 
     getClientStats(clientId, callback) {
         dbQuery(`SELECT
-                         (SELECT COUNT(*) FROM "order" WHERE client_id=$1)::int AS order_count,
-                         (SELECT COUNT(*) FROM review WHERE client_id=$1)::int AS review_count,
-                         (SELECT COUNT(*) FROM request WHERE client_id=$1)::int AS request_count,
-                         (SELECT COUNT(*) FROM refund r JOIN "order" o ON o.order_num=r.order_num WHERE o.client_id=$1)::int AS refund_count`,
+            (SELECT COUNT(*) FROM "order" WHERE client_ID=$1)::int AS order_count,
+            (SELECT COUNT(*) FROM review r JOIN "order" o ON o.order_num=r.order_num WHERE o.client_ID=$1)::int AS review_count,
+            (SELECT COUNT(*) FROM makes_request WHERE client_ID=$1)::int AS request_count,
+            (SELECT COUNT(*) FROM refund r JOIN "order" o ON o.order_num=r.order_num WHERE o.client_ID=$1)::int AS refund_count`,
             [clientId],(err,result)=>callback(err,result?.rows?.[0]||{}));
     }
 };
-
 
 
 
@@ -1143,7 +1238,7 @@ const database = {
 // The schema is based on the supplied Pasted markdown.md. A few invalid PostgreSQL
 // declarations in the original paste are corrected here (for example DECIMMAL,
 // PARTIAL KEY, and composite-key column-name typos). The existing HTTP layer also
-// needs the small application-support tables and compatibility columns defined below.
+// uses only the project schema plus the four authentication/audit support tables.
 (async () => {
     try {
         await database.initializeDatabase();
@@ -1875,8 +1970,8 @@ const server = http.createServer((req, res) => {
 
                                     // Insert into boss table (boss_id is VARCHAR, references personal.id)
                                     database.database.run(
-                                        'INSERT INTO boss (boss_id, signature) VALUES ($1, $2)',
-                                        [tempStoreData.personalId, tempStoreData.signature],
+                                        'INSERT INTO boss (boss_id) VALUES ($1)',
+                                        [tempStoreData.personalId],
                                         (err) => {
                                             if (err) {
                                                 database.database.run('ROLLBACK');
@@ -3010,7 +3105,7 @@ const server = http.createServer((req, res) => {
                             category: {
                                 id: category.id,
                                 name: category.name,
-                                parent_id: category.parent_id,
+                                parent_id: category.parent_category_id,
                                 description: category.description
                             }
                         }));
@@ -3076,7 +3171,7 @@ const server = http.createServer((req, res) => {
                     const year = new Date().getFullYear().toString().slice(-3);
 
                     database.database.get(
-                        'SELECT COUNT(*) AS order_count FROM "order" WHERE store_id = $1 AND EXTRACT(YEAR FROM order_date)::INTEGER = $2::INTEGER',
+                        'SELECT COUNT(*) AS order_count FROM "order" WHERE LEFT(order_num,3) = $1 AND SUBSTRING(order_num FROM 4 FOR 3)::INTEGER = ($2::INTEGER % 1000)',
                         [storeId, new Date().getFullYear().toString()],
                         (err, result) => {
                             if (err) {
@@ -3207,7 +3302,7 @@ const server = http.createServer((req, res) => {
                     const year = now.getFullYear().toString().slice(-3);
 
                     database.database.get(
-                        'SELECT COUNT(*)::int AS request_count FROM request WHERE store_id = $1 AND EXTRACT(YEAR FROM date_and_time)::int = $2::int AND EXTRACT(MONTH FROM date_and_time)::int = $3::int',
+                        'SELECT COUNT(*)::int AS request_count FROM request r JOIN for_store fs ON fs.request_num=r.request_num WHERE fs.store_ID = $1 AND EXTRACT(YEAR FROM r.date_and_time)::int = $2::int AND EXTRACT(MONTH FROM r.date_and_time)::int = $3::int',
                         [storeId, now.getFullYear().toString(), (now.getMonth() + 1).toString().padStart(2, '0')],
                         (err, result) => {
                             if (err) {
@@ -3265,7 +3360,7 @@ const server = http.createServer((req, res) => {
                     const clientId = parseInt(userIdStr.replace('client_', ''));
 
                     database.database.get(
-                        'SELECT store_id FROM "order" WHERE order_num = $1',
+                        'SELECT LEFT(order_num,3) AS store_id FROM "order" WHERE order_num = $1',
                         [refundData.order_num],
                         (err, result) => {
                             if (err || !result) {
@@ -3280,7 +3375,7 @@ const server = http.createServer((req, res) => {
                             const year = now.getFullYear().toString().slice(-3);
 
                             database.database.get(
-                                'SELECT COUNT(*)::int AS refund_count FROM refund WHERE EXTRACT(YEAR FROM request_date)::int = $1::int AND EXTRACT(MONTH FROM request_date)::int = $2::int',
+                                'SELECT COUNT(*)::int AS refund_count FROM refund WHERE SUBSTRING(refund_id::text FROM 4 FOR 2)::int = $2::int AND SUBSTRING(refund_id::text FROM 6 FOR 3)::int = ($1::int % 1000)',
                                 [now.getFullYear().toString(), (now.getMonth() + 1).toString().padStart(2, '0')],
                                 (err, result) => {
                                     if (err) {
@@ -3359,7 +3454,7 @@ const server = http.createServer((req, res) => {
 
                                 // PostgreSQL: extract the numeric product sequence from the store-prefixed product code
                                 database.database.get(
-                                    'SELECT MAX(CAST(SUBSTRING(code FROM 4) AS INTEGER)) AS max_product_num FROM product WHERE store_id = $1',
+                                    'SELECT MAX(CAST(SUBSTRING(code FROM 4) AS INTEGER)) AS max_product_num FROM product WHERE LEFT(code,3) = $1',
                                     [storeId],
                                     (err, result) => {
                                         if (err) {
@@ -3428,7 +3523,7 @@ const server = http.createServer((req, res) => {
                 }
 
                 database.database.get(
-                    'SELECT store_id FROM product WHERE code = $1',
+                    'SELECT LEFT(code,3) AS store_id FROM product WHERE code = $1',
                     [productData.code],
                     (err, product) => {
                         if (err || !product) {
@@ -4831,8 +4926,8 @@ const server = http.createServer((req, res) => {
                         const reportId = 'RPT' + Date.now().toString().slice(-6);
 
                         database.database.run(
-                            'INSERT INTO report (id, store_id, period, start_date, end_date, type, generated_by, generated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)',
-                            [reportId, storeId, period, startDate, endDate, type, personalId],
+                            'INSERT INTO report (date, store_ID, overall_profit, sales_trend, marketing_growth, owner_signature) VALUES (CURRENT_TIMESTAMP, $1, 0, $2, $3, $4)',
+                            [storeId, period, type, 'Not signed yet'],
                             function(err) {
                                 if (err) {
                                     console.error('Error generating report:', err);
